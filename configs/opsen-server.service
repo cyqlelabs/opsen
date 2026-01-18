@@ -1,0 +1,20 @@
+[Unit]
+Description=Opsen Load Balancer Server
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/opsen
+ExecStart=/usr/local/bin/opsen-server -config /etc/opsen/server.yml
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Create config directory if it doesn't exist
+ExecStartPre=/bin/mkdir -p /etc/opsen
+ExecStartPre=/bin/mkdir -p /opt/opsen
+
+[Install]
+WantedBy=multi-user.target

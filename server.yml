@@ -1,0 +1,126 @@
+# Opsen Load Balancer Server Configuration
+
+# Server listening port
+port: 8181
+
+# Host to bind to (0.0.0.0 for all interfaces, 127.0.0.1 for localhost only)
+host: 0.0.0.0
+
+# SQLite database file path
+database: /tmp/opsen.db
+
+# Client stale timeout in minutes
+# Clients that haven't reported stats in this time are considered stale
+stale_minutes: 5
+
+# Cleanup interval in seconds
+# How often to purge stale clients from memory and database
+cleanup_interval_seconds: 30
+
+# Log level (debug, info, warn, error, fatal)
+log_level: info
+
+# Enable JSON structured logging (default: false)
+json_logging: false
+
+# GeoIP database path (optional)
+# Path to MaxMind GeoLite2-City.mmdb for IP-based geolocation
+# Download using: ./scripts/download-geoip.sh YOUR_LICENSE_KEY
+# Get a free license key: https://www.maxmind.com/en/geolite2/signup
+geoip_db_path: /home/nico/dev/projects/cyqle/opsen/GeoLite2-City.mmdb
+
+# Security configuration
+# Primary server key for client authentication (opsen-client instances)
+# Leave empty to disable client authentication
+server_key: "I2LQ6bfheBz0Grd5"
+
+# Additional API keys for other integrations (broker, admin tools, etc.)
+# Both server_key and api_keys are accepted for authentication
+# Leave empty to disable API key authentication
+# api_keys:
+#   - "broker-api-key-12345"
+#   - "admin-api-key-67890"
+
+# IP whitelist (CIDR notation supported)
+# Leave empty to allow all IPs
+# whitelisted_ips:
+#   - "203.0.113.0/24"
+#   - "198.51.100.50"
+
+# Rate limiting (per IP address)
+# Prevents DoS attacks via token bucket algorithm
+rate_limit_per_minute: 60   # Requests per minute per IP (0 = unlimited)
+rate_limit_burst: 120        # Burst capacity
+
+# Request limits
+max_request_body_bytes: 10485760  # 10MB max request body
+request_timeout_seconds: 30       # Overall request timeout
+read_header_timeout_seconds: 10   # Slowloris attack prevention
+
+# CORS configuration
+enable_cors: false
+# cors_allowed_origins:
+#   - "https://app.example.com"
+#   - "https://admin.example.com"
+
+# Proxy configuration (optional)
+# Endpoint prefixes to intercept and route to backends
+# Management endpoints (/register, /stats, /route, /health, /clients) are always protected
+proxy_endpoints:
+  - /
+
+# TLS configuration (optional)
+# Leave empty to run HTTP only
+tls_cert_file: server.crt
+tls_key_file: server.key
+
+# Skip TLS verification when proxying to backends (useful for self-signed certs in development)
+# WARNING: Only use in development! In production, use proper certificates.
+tls_insecure_skip_verify: true
+
+# Tier selection configuration
+# Customize field/header names for tier specification
+tier_field_name: "tier"      # JSON body field and query param name (default: "tier")
+tier_header: "X-Tier"        # HTTP header name (default: "X-Tier")
+
+# Subscription tier configuration
+# Defines resource requirements for routing decisions
+tiers:
+  - name: free
+    vcpu: 1
+    memory_gb: 1.0
+    storage_gb: 0
+
+  - name: lite
+    vcpu: 1
+    memory_gb: 2.0
+    storage_gb: 10
+
+  - name: pro-standard
+    vcpu: 2
+    memory_gb: 4.0
+    storage_gb: 20
+
+  - name: pro-turbo
+    vcpu: 4
+    memory_gb: 8.0
+    storage_gb: 40
+
+  - name: pro-max
+    vcpu: 8
+    memory_gb: 16.0
+    storage_gb: 80
+
+# Sticky session configuration
+# Enables session affinity based on a custom HTTP header
+sticky_header: "X-Session-ID"              # Header name for sticky sessions (e.g., "X-Session-ID", "X-User-ID")
+sticky_affinity_enabled: true              # Prefer same server for different tiers from same sticky_id
+pending_allocation_timeout_seconds: 120    # Resource reservation timeout (default: 120)
+
+# Database connection pooling
+db_max_open_conns: 25          # Max open database connections
+db_max_idle_conns: 5           # Max idle database connections
+db_conn_max_lifetime: 300      # Connection max lifetime in seconds (5 minutes)
+
+# Graceful shutdown
+shutdown_timeout_seconds: 30   # Graceful shutdown timeout

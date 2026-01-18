@@ -1,0 +1,41 @@
+# Opsen Load Balancer - Caddy Integration
+# This configuration shows how to integrate the load balancer with Caddy
+
+{
+    # Global options
+    admin off
+}
+
+# Main application domain
+app.cyqle.io {
+    # Load balancer integration for session creation
+    @create_session {
+        path /browse/new/new
+        method POST
+    }
+
+    handle @create_session {
+        # Extract tier from request body and forward to load balancer
+        reverse_proxy http://localhost:8080/route {
+            # Pass through original request to get routing decision
+            header_up X-Original-URI {uri}
+            header_up X-Client-IP {remote_host}
+
+            # Rewrite to use the endpoint returned by load balancer
+            # This requires a custom Caddy plugin or using dynamic_upstream
+        }
+    }
+
+    # Default routing to local broker
+    handle {
+        reverse_proxy http://localhost:11000
+    }
+}
+
+# Alternative: Use dynamic backend selection with load balancer
+# This requires custom Caddy module or using http.handlers.dynamic_upstream
+
+# Load balancer server
+lb.cyqle.io {
+    reverse_proxy http://localhost:8080
+}

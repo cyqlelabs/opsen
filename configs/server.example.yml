@@ -1,0 +1,146 @@
+# Opsen Load Balancer Server Configuration
+
+# Server listening port
+port: 8080
+
+# Host to bind to (0.0.0.0 for all interfaces, 127.0.0.1 for localhost only)
+host: 0.0.0.0
+
+# SQLite database file path
+database: /opt/opsen/opsen.db
+
+# Client stale timeout in minutes
+# Clients that haven't reported stats in this time are considered stale
+stale_minutes: 5
+
+# Cleanup interval in seconds
+# How often to purge stale clients from memory and database
+cleanup_interval_seconds: 60
+
+# Log level (debug, info, warn, error, fatal)
+log_level: info
+
+# Enable JSON structured logging (default: false)
+# json_logging: false
+
+# Security configuration
+# Authentication is disabled by default (both server_key and api_keys are empty)
+# To enable authentication, set at least one of these options:
+#
+# server_key: Primary authentication key for opsen-client instances
+#             All clients must provide this key in the X-API-Key header
+#             Leave empty to allow unauthenticated client registration/stats reporting
+# server_key: ""
+#
+# api_keys: Additional API keys for other integrations (broker, admin tools, custom clients)
+#           Multiple keys can be specified as a list
+#           Both server_key and api_keys are accepted for authentication
+# api_keys:
+#   - "broker-api-key-12345"
+#   - "admin-api-key-67890"
+#
+# Example production setup:
+# server_key: "shared-secret-for-all-clients-change-me"  # All clients use this
+# api_keys:
+#   - "broker-integration-key-xyz"  # For broker calling /route endpoint
+#   - "admin-dashboard-key-abc"     # For admin dashboard
+
+# Proxy configuration (optional)
+# Endpoint prefixes to intercept and route to backends
+# All paths starting with these prefixes will be proxied
+#
+# Option 1: Proxy specific prefixes
+# proxy_endpoints:
+#   - /browse     # Proxies /browse/*, /browse/new/new, etc.
+#   - /api        # Proxies /api/*, /api/v1/users, etc.
+#   - /sessions   # Proxies /sessions/*, /sessions/create, etc.
+#
+# Option 2: Proxy ALL paths (wildcard)
+# Management endpoints (/register, /stats, /route, /health, /clients) are always protected
+proxy_endpoints:
+  - /  # Wildcard: proxy all non-management paths
+
+# TLS configuration (optional)
+# Leave empty to run HTTP only
+# tls_cert_file: /etc/ssl/certs/opsen.crt
+# tls_key_file: /etc/ssl/private/opsen.key
+
+# GeoIP database configuration (optional)
+# Path to MaxMind GeoLite2-City.mmdb for IP-based geolocation
+# When configured, server will lookup client location from IP address if coordinates not provided in /route request
+# Download using: ./scripts/download-geoip.sh YOUR_LICENSE_KEY
+# Get a free license key: https://www.maxmind.com/en/geolite2/signup
+# geoip_db_path: ./GeoLite2-City.mmdb
+
+# Sticky session configuration
+# Enables session affinity based on a custom HTTP header
+# When a request includes the configured header, the same backend will be used for that header value + tier combination
+#
+# sticky_header: Header name to extract sticky ID from (e.g., "X-Session-ID", "X-User-ID", "X-Device-ID")
+#                Leave empty to disable sticky sessions
+# sticky_affinity_enabled: When true, prefer to assign different tiers from the same sticky_id to the same server
+#                          When false, each tier is independently routed to the best available server
+#
+# Example use cases:
+#   - X-Session-ID: Different sessions from same user can go to different servers
+#   - X-User-ID: All sessions from same user prefer same server (when sticky_affinity_enabled=true)
+#   - X-Device-ID: All sessions from same device prefer same server
+#
+# sticky_header: "X-Session-ID"
+# sticky_affinity_enabled: true
+# pending_allocation_timeout_seconds: 120  # How long to keep resource reservations (default: 120)
+
+# Tier selection configuration
+# Customize the field/header names for tier specification
+# tier_field_name: "tier"     # JSON body field name and query parameter name (default: "tier")
+# tier_header: "X-Tier"        # HTTP header name for tier (default: "X-Tier")
+#
+# Example: Use "subscription_level" instead of "tier"
+# tier_field_name: "subscription_level"
+# tier_header: "X-Subscription-Level"
+
+# Tier specifications
+# Define resource requirements for each tier
+# If not specified, defaults will be used (free, lite, pro-standard, pro-turbo, pro-max)
+tiers:
+  - name: free
+    vcpu: 1
+    memory_gb: 1.0
+    storage_gb: 0
+
+  - name: lite
+    vcpu: 1
+    memory_gb: 1.0
+    storage_gb: 5
+
+  - name: pro-standard
+    vcpu: 2
+    memory_gb: 4.0
+    storage_gb: 20
+
+  - name: pro-turbo
+    vcpu: 4
+    memory_gb: 8.0
+    storage_gb: 30
+
+  - name: pro-max
+    vcpu: 8
+    memory_gb: 16.0
+    storage_gb: 40
+
+  # GPU-accelerated tiers (optional, only used if clients have GPUs)
+  # gpu: Number of GPUs required
+  # gpu_memory_gb: Total GPU VRAM required across all GPUs
+  - name: gpu-inference
+    vcpu: 8
+    memory_gb: 32.0
+    storage_gb: 100
+    gpu: 1
+    gpu_memory_gb: 16.0
+
+  - name: gpu-training
+    vcpu: 16
+    memory_gb: 64.0
+    storage_gb: 500
+    gpu: 2
+    gpu_memory_gb: 48.0

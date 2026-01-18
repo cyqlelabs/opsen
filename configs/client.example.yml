@@ -1,0 +1,58 @@
+# Opsen Load Balancer Client Configuration
+
+# Load balancer server URL
+server_url: http://lb.example.com:8080
+
+# Optional: Override endpoint URL
+# If not set, will auto-construct from local IP as http://{local_ip}:11000
+# Examples:
+#   endpoint_url: https://192.168.1.10:11000
+#   endpoint_url: http://10.0.0.5:8080
+# endpoint_url: ""
+
+# Geolocation configuration (optional)
+# Option 1: Skip geolocation entirely (fastest, no distance-based routing)
+# skip_geolocation: true
+
+# Option 2: Use MaxMind GeoLite2 database (recommended to avoid API rate limits)
+# Download using: ./scripts/download-geoip.sh YOUR_LICENSE_KEY
+# Get a free license key: https://www.maxmind.com/en/geolite2/signup
+# geoip_db_path: ./GeoLite2-City.mmdb
+
+# Option 3: Use ipapi.co API (default, but has rate limits: 150 requests/day)
+# Automatically used if skip_geolocation is false and geoip_db_path is not set
+
+# Unique client identifier (auto-generated if not specified)
+# client_id: ""
+
+# Hostname override (uses system hostname if not specified)
+# hostname: ""
+
+# Time window for averaging metrics in minutes
+# Metrics are collected every second and averaged over this window
+window_minutes: 15
+
+# Report interval in seconds
+# How often to send stats to the server
+report_interval_seconds: 60
+
+# Disk path to monitor
+# Use "/" for root filesystem or a specific mount point
+disk_path: /
+
+# Log level (debug, info, warn, error, fatal)
+# Use "debug" to see detailed geolocation and metrics information
+log_level: info
+
+# Skip TLS certificate verification (for self-signed certificates in development)
+# WARNING: Only use in development! In production, use proper certificates.
+# insecure_tls: false
+
+# Server authentication key (must match server's server_key)
+# If the server has server_key configured, this MUST match that value
+# Leave empty if server has no authentication
+# All clients connecting to the same server should use the same server_key
+# server_key: ""
+#
+# Example production setup (must match server configuration):
+# server_key: "shared-secret-for-all-clients-change-me"
