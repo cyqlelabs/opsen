@@ -245,11 +245,15 @@ func TestClientOverhead_ReportInterval(t *testing.T) {
 		}
 	}
 
+	// Calculate average memory (used for report preparation test)
 	avgMemory := 0.0
 	for _, v := range memorySamples {
 		avgMemory += v
 	}
-	avgMemory /= float64(len(memorySamples))
+	if len(memorySamples) > 0 {
+		avgMemory /= float64(len(memorySamples))
+	}
+	_ = avgMemory // Mark as used for benchmark purposes
 
 	// Collect GPU stats
 	_ = gpuCollector.CollectSample()

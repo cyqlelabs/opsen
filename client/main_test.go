@@ -78,7 +78,7 @@ func TestCircuitBreaker_SuccessResetsFailures(t *testing.T) {
 
 	// Two failures
 	for i := 0; i < 2; i++ {
-		cb.Call(func() error {
+		_ = cb.Call(func() error {
 			return ErrCircuitOpen
 		})
 	}
@@ -88,7 +88,7 @@ func TestCircuitBreaker_SuccessResetsFailures(t *testing.T) {
 	}
 
 	// One success should reset counter
-	cb.Call(func() error {
+	_ = cb.Call(func() error {
 		return nil
 	})
 
@@ -176,7 +176,9 @@ func TestMetricsCollector_Registration(t *testing.T) {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"status": "registered"})
+			if err := json.NewEncoder(w).Encode(map[string]string{"status": "registered"}); err != nil {
+				t.Errorf("Failed to encode response: %v", err)
+			}
 		}
 	}))
 	defer server.Close()
@@ -238,7 +240,9 @@ func TestMetricsCollector_StatsReporting(t *testing.T) {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"status": "received"})
+			if err := json.NewEncoder(w).Encode(map[string]string{"status": "received"}); err != nil {
+				t.Errorf("Failed to encode response: %v", err)
+			}
 		}
 	}))
 	defer server.Close()
