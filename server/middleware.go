@@ -36,6 +36,44 @@ func RequestSizeLimit(maxBytes int64) func(http.Handler) http.Handler {
 	}
 }
 
+// timeoutWriter wraps http.ResponseWriter to prevent concurrent writes after timeout
+type timeoutWriter struct {
+	w          http.ResponseWriter
+	mu         sync.Mutex
+	timedOut   bool
+	wroteHeader bool
+}
+
+func (tw *timeoutWriter) Header() http.Header {
+	return tw.w.Header()
+}
+
+func (tw *timeoutWriter) Write(b []byte) (int, error) {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+	if tw.timedOut {
+		return 0, http.ErrHandlerTimeout
+	}
+	tw.wroteHeader = true
+	return tw.w.Write(b)
+}
+
+func (tw *timeoutWriter) WriteHeader(code int) {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+	if tw.timedOut || tw.wroteHeader {
+		return
+	}
+	tw.wroteHeader = true
+	tw.w.WriteHeader(code)
+}
+
+func (tw *timeoutWriter) setTimedOut() {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+	tw.timedOut = true
+}
+
 // Timeout middleware enforces request timeout
 func Timeout(timeout time.Duration) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -45,9 +83,10 @@ func Timeout(timeout time.Duration) func(http.Handler) http.Handler {
 
 			r = r.WithContext(ctx)
 
+			tw := &timeoutWriter{w: w}
 			done := make(chan struct{})
 			go func() {
-				next.ServeHTTP(w, r)
+				next.ServeHTTP(tw, r)
 				close(done)
 			}()
 
@@ -55,6 +94,7 @@ func Timeout(timeout time.Duration) func(http.Handler) http.Handler {
 			case <-done:
 				return
 			case <-ctx.Done():
+				tw.setTimedOut()
 				if ctx.Err() == context.DeadlineExceeded {
 					http.Error(w, "Request timeout", http.StatusRequestTimeout)
 				}
