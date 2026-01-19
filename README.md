@@ -4,6 +4,12 @@
 
 ### Resource-Aware Load Balancer for Intelligent Traffic Routing
 
+[![Tests](https://github.com/cyqlelabs/opsen/actions/workflows/test.yml/badge.svg)](https://github.com/cyqlelabs/opsen/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/cyqlelabs/opsen/branch/main/graph/badge.svg)](https://codecov.io/gh/cyqlelabs/opsen)
+[![Go Report Card](https://goreportcard.com/badge/cyqle.in/opsen)](https://goreportcard.com/report/cyqle.in/opsen)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/cyqlelabs/opsen)](https://github.com/cyqlelabs/opsen/blob/main/go.mod)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
 </div>
 
 Production-ready load balancer that routes traffic based on real-time CPU, RAM, disk, and GPU availability—not round-robin guesswork. Routes to the best backend based on actual resource metrics, geography, and configurable tier requirements.
