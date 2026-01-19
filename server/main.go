@@ -441,7 +441,9 @@ func (s *Server) loadClients() error {
 		}
 
 		if gpuModelsJSON.Valid && gpuModelsJSON.String != "" {
-			json.Unmarshal([]byte(gpuModelsJSON.String), &state.Registration.GPUModels)
+			if err := json.Unmarshal([]byte(gpuModelsJSON.String), &state.Registration.GPUModels); err != nil {
+				log.Printf("Warning: Failed to parse GPU models JSON for client %s: %v", state.Registration.ClientID, err)
+			}
 		}
 
 		state.LastSeen, _ = time.Parse("2006-01-02 15:04:05", lastSeen)
@@ -503,8 +505,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	// Remove duplicates from database
 	if len(duplicateIDs) > 0 {
 		for _, id := range duplicateIDs {
-			s.db.Exec("DELETE FROM clients WHERE client_id = ?", id)
-			s.db.Exec("DELETE FROM stats WHERE client_id = ?", id)
+			if _, err := s.db.Exec("DELETE FROM clients WHERE client_id = ?", id); err != nil {
+				log.Printf("Warning: Failed to delete duplicate client: %v", err)
+			}
+			if _, err := s.db.Exec("DELETE FROM stats WHERE client_id = ?", id); err != nil {
+				log.Printf("Warning: Failed to delete duplicate client stats: %v", err)
+			}
 		}
 	}
 
@@ -526,7 +532,9 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Client registered: %s (%s) PublicIP=%s LocalIP=%s (endpoint: %s)",
 		reg.ClientID, reg.Hostname, reg.PublicIP, reg.LocalIP, endpoint)
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "registered"})
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "registered"}); err != nil {
+		log.Printf("Warning: Failed to encode registration response: %v", err)
+	}
 }
 
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
@@ -571,10 +579,14 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Update last_seen in clients table
-	s.db.Exec("UPDATE clients SET last_seen = CURRENT_TIMESTAMP WHERE client_id = ?", stats.ClientID)
+	if _, err := s.db.Exec("UPDATE clients SET last_seen = CURRENT_TIMESTAMP WHERE client_id = ?", stats.ClientID); err != nil {
+		log.Printf("Warning: Failed to update client last_seen: %v", err)
+	}
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]string{"status": "received"})
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "received"}); err != nil {
+		log.Printf("Warning: Failed to encode stats response: %v", err)
+	}
 }
 
 func (s *Server) handleRoute(w http.ResponseWriter, r *http.Request) {
@@ -652,7 +664,9 @@ func (s *Server) handleRoute(w http.ResponseWriter, r *http.Request) {
 	})
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Warning: Failed to encode routing response: %v", err)
+	}
 }
 
 func (s *Server) findBestClient(tier common.TierSpec, clientLat, clientLon float64) *ClientState {
@@ -857,7 +871,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Warning: Failed to encode health response: %v", err)
+	}
 }
 
 func (s *Server) handleListClients(w http.ResponseWriter, r *http.Request) {
@@ -926,7 +942,9 @@ func (s *Server) handleListClients(w http.ResponseWriter, r *http.Request) {
 	s.mu.RUnlock()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(clients)
+	if err := json.NewEncoder(w).Encode(clients); err != nil {
+		log.Printf("Warning: Failed to encode clients list response: %v", err)
+	}
 }
 
 func (s *Server) handlePurgeStaleClients(w http.ResponseWriter, r *http.Request) {
@@ -951,8 +969,12 @@ func (s *Server) handlePurgeStaleClients(w http.ResponseWriter, r *http.Request)
 
 	// Remove from database
 	for _, id := range staleIDs {
-		s.db.Exec("DELETE FROM clients WHERE client_id = ?", id)
-		s.db.Exec("DELETE FROM stats WHERE client_id = ?", id)
+		if _, err := s.db.Exec("DELETE FROM clients WHERE client_id = ?", id); err != nil {
+			log.Printf("Warning: Failed to delete stale client: %v", err)
+		}
+		if _, err := s.db.Exec("DELETE FROM stats WHERE client_id = ?", id); err != nil {
+			log.Printf("Warning: Failed to delete stale client stats: %v", err)
+		}
 	}
 
 	// Also purge invalid/old clients
@@ -973,13 +995,15 @@ func (s *Server) handlePurgeStaleClients(w http.ResponseWriter, r *http.Request)
 	log.Printf("Purged %d stale clients (%d from cache, %d from database)", totalPurged, purged, dbPurged)
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":        "success",
 		"purged":        totalPurged,
 		"cache_purged":  purged,
 		"db_purged":     dbPurged,
 		"timestamp":     time.Now(),
-	})
+	}); err != nil {
+		log.Printf("Warning: Failed to encode purge response: %v", err)
+	}
 }
 
 func (s *Server) cleanupStaleClients(ctx context.Context) {
@@ -1011,8 +1035,12 @@ func (s *Server) cleanupStaleClients(ctx context.Context) {
 			// Also remove from database
 			if len(staleIDs) > 0 {
 				for _, id := range staleIDs {
-					s.db.Exec("DELETE FROM clients WHERE client_id = ?", id)
-					s.db.Exec("DELETE FROM stats WHERE client_id = ?", id)
+					if _, err := s.db.Exec("DELETE FROM clients WHERE client_id = ?", id); err != nil {
+						log.Printf("Warning: Failed to delete stale client: %v", err)
+					}
+					if _, err := s.db.Exec("DELETE FROM stats WHERE client_id = ?", id); err != nil {
+						log.Printf("Warning: Failed to delete stale client stats: %v", err)
+					}
 					LogInfoWithData("Purged stale client from database", map[string]interface{}{
 						"client_id": id,
 					})
@@ -1400,8 +1428,10 @@ func (s *Server) findStickyAssignment(stickyID, tier string, tierSpec common.Tie
 	}
 
 	// Update last_used timestamp
-	s.db.Exec(`UPDATE sticky_assignments SET last_used = CURRENT_TIMESTAMP
-                WHERE sticky_id = ? AND tier = ?`, stickyID, tier)
+	if _, err := s.db.Exec(`UPDATE sticky_assignments SET last_used = CURRENT_TIMESTAMP
+                WHERE sticky_id = ? AND tier = ?`, stickyID, tier); err != nil {
+		log.Printf("Warning: Failed to update sticky assignment timestamp: %v", err)
+	}
 
 	return client
 }
@@ -1490,7 +1520,9 @@ func (s *Server) removeStickyAssignment(stickyID, tier string) {
 	}
 	s.mu.Unlock()
 
-	s.db.Exec("DELETE FROM sticky_assignments WHERE sticky_id = ? AND tier = ?", stickyID, tier)
+	if _, err := s.db.Exec("DELETE FROM sticky_assignments WHERE sticky_id = ? AND tier = ?", stickyID, tier); err != nil {
+		log.Printf("Warning: Failed to delete sticky assignment: %v", err)
+	}
 }
 
 // addPendingAllocation reserves resources on a client for an in-flight session creation
@@ -1775,8 +1807,12 @@ func (s *Server) removeStickyAssignmentsForClientLocked(clientID string) {
 				delete(tierMap, tier)
 				removed++
 
-				// Clean up database
-				go s.db.Exec("DELETE FROM sticky_assignments WHERE sticky_id = ? AND tier = ?", stickyID, tier)
+				// Clean up database (in background, capture loop variables)
+				go func(sid, t string) {
+					if _, err := s.db.Exec("DELETE FROM sticky_assignments WHERE sticky_id = ? AND tier = ?", sid, t); err != nil {
+						log.Printf("Warning: Failed to delete sticky assignment in background: %v", err)
+					}
+				}(stickyID, tier)
 			}
 		}
 		// Clean up empty tier maps
