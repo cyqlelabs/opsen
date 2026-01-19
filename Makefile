@@ -1,4 +1,4 @@
-.PHONY: all build-server build-client clean install test test-race test-coverage test-coverage-html test-short test-verbose benchmark deps
+.PHONY: all build-server build-client clean install test test-race test-coverage test-coverage-html test-short test-verbose benchmark lint deps
 
 all: build-server build-client
 
@@ -79,6 +79,10 @@ test-verbose:
 benchmark:
 	@echo "Running benchmarks..."
 	go test -bench=. -benchmem ./...
+
+lint:
+	@echo "Running linter..."
+	go run github.com/golangci/golangci-lint/cmd/golangci-lint@latest run
 
 deps:
 	@echo "Downloading dependencies..."
