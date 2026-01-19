@@ -920,7 +920,7 @@ func TestIPWhitelist_String(t *testing.T) {
 	// (There's no String() method defined, so this test just verifies basic usage)
 	ipw := NewIPWhitelist([]string{"1.2.3.4"})
 	if ipw == nil {
-		t.Error("Expected non-nil IPWhitelist")
+		t.Fatal("Expected non-nil IPWhitelist")
 	}
 	if !ipw.enabled {
 		t.Error("Expected IPWhitelist to be enabled")
