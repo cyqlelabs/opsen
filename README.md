@@ -6,7 +6,6 @@
 
 [![Tests](https://github.com/cyqlelabs/opsen/actions/workflows/test.yml/badge.svg)](https://github.com/cyqlelabs/opsen/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/cyqlelabs/opsen/branch/main/graph/badge.svg)](https://codecov.io/gh/cyqlelabs/opsen)
-[![Go Report Card](https://goreportcard.com/badge/cyqle.in/opsen)](https://goreportcard.com/report/cyqle.in/opsen)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/cyqlelabs/opsen)](https://github.com/cyqlelabs/opsen/blob/main/go.mod)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
