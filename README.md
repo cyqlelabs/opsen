@@ -263,8 +263,23 @@ insecure_tls: false  # Dev only - skip cert verification
 The `endpoint_url` defines where this backend accepts traffic. The load balancer uses this URL to route requests and perform health checks.
 
 - **Format**: `http://hostname:port` or `https://hostname:port`
-- **Example**: `endpoint_url: http://backend-1.internal:8000`
 - **Must be accessible** from the load balancer server
+- **Run one client per backend**, each with a unique `endpoint_url`
+
+**Example: Multiple Backends**
+
+```yaml
+# backend-1.yml
+endpoint_url: http://backend-1.internal:8000
+
+# backend-2.yml
+endpoint_url: http://backend-2.internal:8000
+
+# backend-3.yml
+endpoint_url: http://backend-3.internal:9000
+```
+
+Each client monitors its backend's resources and reports to the same load balancer server.
 
 **Run:**
 ```bash
