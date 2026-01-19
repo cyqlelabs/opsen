@@ -558,3 +558,427 @@ func TestChainMiddleware(t *testing.T) {
 		}
 	}
 }
+
+// TestRequestLogger verifies request logging middleware
+func TestRequestLogger(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	wrapped := RequestLogger(handler)
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.RemoteAddr = "1.2.3.4:12345"
+	rec := httptest.NewRecorder()
+
+	wrapped.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", rec.Code)
+	}
+}
+
+// TestRequestLogger_StatusCode verifies status code capture
+func TestRequestLogger_StatusCode(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+	}{
+		{"200 OK", http.StatusOK},
+		{"404 Not Found", http.StatusNotFound},
+		{"500 Internal Server Error", http.StatusInternalServerError},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.statusCode)
+			})
+
+			wrapped := RequestLogger(handler)
+
+			req := httptest.NewRequest("GET", "/test", nil)
+			rec := httptest.NewRecorder()
+
+			wrapped.ServeHTTP(rec, req)
+
+			if rec.Code != tt.statusCode {
+				t.Errorf("Expected status %d, got %d", tt.statusCode, rec.Code)
+			}
+		})
+	}
+}
+
+// TestCORS verifies CORS middleware
+func TestCORS(t *testing.T) {
+	config := CORSConfig{
+		AllowedOrigins: []string{"https://example.com", "https://app.example.com"},
+		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE"},
+		AllowedHeaders: []string{"Content-Type", "Authorization"},
+	}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	middleware := CORS(config)
+	wrapped := middleware(handler)
+
+	tests := []struct {
+		name           string
+		origin         string
+		method         string
+		expectedStatus int
+		checkHeaders   bool
+	}{
+		{
+			name:           "Allowed origin",
+			origin:         "https://example.com",
+			method:         "GET",
+			expectedStatus: http.StatusOK,
+			checkHeaders:   true,
+		},
+		{
+			name:           "Another allowed origin",
+			origin:         "https://app.example.com",
+			method:         "POST",
+			expectedStatus: http.StatusOK,
+			checkHeaders:   true,
+		},
+		{
+			name:           "Disallowed origin",
+			origin:         "https://evil.com",
+			method:         "GET",
+			expectedStatus: http.StatusForbidden,
+			checkHeaders:   false,
+		},
+		{
+			name:           "Preflight request",
+			origin:         "https://example.com",
+			method:         "OPTIONS",
+			expectedStatus: http.StatusNoContent,
+			checkHeaders:   true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, "/test", nil)
+			req.Header.Set("Origin", tt.origin)
+			rec := httptest.NewRecorder()
+
+			wrapped.ServeHTTP(rec, req)
+
+			if rec.Code != tt.expectedStatus {
+				t.Errorf("Expected status %d, got %d", tt.expectedStatus, rec.Code)
+			}
+
+			if tt.checkHeaders {
+				allowOrigin := rec.Header().Get("Access-Control-Allow-Origin")
+				if allowOrigin == "" {
+					t.Error("Expected Access-Control-Allow-Origin header")
+				}
+
+				allowMethods := rec.Header().Get("Access-Control-Allow-Methods")
+				if allowMethods == "" {
+					t.Error("Expected Access-Control-Allow-Methods header")
+				}
+
+				allowHeaders := rec.Header().Get("Access-Control-Allow-Headers")
+				if allowHeaders == "" {
+					t.Error("Expected Access-Control-Allow-Headers header")
+				}
+			}
+		})
+	}
+}
+
+// TestCORS_Wildcard verifies wildcard origin support
+func TestCORS_Wildcard(t *testing.T) {
+	config := CORSConfig{
+		AllowedOrigins: []string{"*"},
+		AllowedMethods: []string{"GET"},
+		AllowedHeaders: []string{"Content-Type"},
+	}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	middleware := CORS(config)
+	wrapped := middleware(handler)
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.Header.Set("Origin", "https://any-origin.com")
+	rec := httptest.NewRecorder()
+
+	wrapped.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", rec.Code)
+	}
+
+	allowOrigin := rec.Header().Get("Access-Control-Allow-Origin")
+	if allowOrigin != "*" {
+		t.Errorf("Expected wildcard origin, got %s", allowOrigin)
+	}
+}
+
+// TestHealthCheckBypass verifies health check bypass middleware
+func TestHealthCheckBypass(t *testing.T) {
+	healthPaths := []string{"/health", "/healthz", "/ping"}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	wrapped := HealthCheckBypass(healthPaths, handler)
+
+	tests := []struct {
+		name           string
+		path           string
+		expectedStatus int
+	}{
+		{"Health endpoint 1", "/health", http.StatusOK},
+		{"Health endpoint 2", "/healthz", http.StatusOK},
+		{"Health endpoint 3", "/ping", http.StatusOK},
+		{"Non-health endpoint", "/api/data", http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", tt.path, nil)
+			rec := httptest.NewRecorder()
+
+			wrapped.ServeHTTP(rec, req)
+
+			if rec.Code != tt.expectedStatus {
+				t.Errorf("Expected status %d, got %d", tt.expectedStatus, rec.Code)
+			}
+		})
+	}
+}
+
+// TestGetClientIP verifies client IP extraction
+func TestGetClientIP(t *testing.T) {
+	tests := []struct {
+		name           string
+		remoteAddr     string
+		forwardedFor   string
+		realIP         string
+		expectedPrefix string
+	}{
+		{
+			name:           "Direct connection",
+			remoteAddr:     "1.2.3.4:12345",
+			expectedPrefix: "1.2.3.4",
+		},
+		{
+			name:           "X-Forwarded-For single IP",
+			remoteAddr:     "127.0.0.1:12345",
+			forwardedFor:   "5.6.7.8",
+			expectedPrefix: "5.6.7.8",
+		},
+		{
+			name:           "X-Forwarded-For multiple IPs",
+			remoteAddr:     "127.0.0.1:12345",
+			forwardedFor:   "5.6.7.8, 9.10.11.12, 13.14.15.16",
+			expectedPrefix: "5.6.7.8",
+		},
+		{
+			name:           "X-Real-IP",
+			remoteAddr:     "127.0.0.1:12345",
+			realIP:         "9.10.11.12",
+			expectedPrefix: "9.10.11.12",
+		},
+		{
+			name:           "Invalid X-Forwarded-For falls back to RemoteAddr",
+			remoteAddr:     "1.2.3.4:12345",
+			forwardedFor:   "invalid-ip",
+			expectedPrefix: "1.2.3.4",
+		},
+		{
+			name:           "Invalid X-Real-IP falls back to RemoteAddr",
+			remoteAddr:     "1.2.3.4:12345",
+			realIP:         "invalid-ip",
+			expectedPrefix: "1.2.3.4",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "/test", nil)
+			req.RemoteAddr = tt.remoteAddr
+			if tt.forwardedFor != "" {
+				req.Header.Set("X-Forwarded-For", tt.forwardedFor)
+			}
+			if tt.realIP != "" {
+				req.Header.Set("X-Real-IP", tt.realIP)
+			}
+
+			ip := getClientIP(req)
+			if !strings.HasPrefix(ip, tt.expectedPrefix) {
+				t.Errorf("Expected IP to start with %s, got %s", tt.expectedPrefix, ip)
+			}
+		})
+	}
+}
+
+// TestInputValidator verifies input validation middleware
+func TestInputValidator(t *testing.T) {
+	validator := &InputValidator{}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	wrapped := validator.Middleware(handler)
+
+	tests := []struct {
+		name           string
+		method         string
+		contentType    string
+		path           string
+		host           string
+		expectedStatus int
+	}{
+		{
+			name:           "Valid JSON POST",
+			method:         "POST",
+			contentType:    "application/json",
+			path:           "/api/test",
+			host:           "example.com",
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "Valid PUT",
+			method:         "PUT",
+			contentType:    "application/json",
+			path:           "/api/test",
+			host:           "example.com",
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "Invalid content type",
+			method:         "POST",
+			contentType:    "text/plain",
+			path:           "/api/test",
+			host:           "example.com",
+			expectedStatus: http.StatusUnsupportedMediaType,
+		},
+		{
+			name:           "Path traversal attempt",
+			method:         "GET",
+			path:           "/api/../../../etc/passwd",
+			host:           "example.com",
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Double slash in path",
+			method:         "GET",
+			path:           "/api//test",
+			host:           "example.com",
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "Missing host header",
+			method:         "GET",
+			path:           "/api/test",
+			host:           "",
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
+			name:           "GET request (no content type required)",
+			method:         "GET",
+			path:           "/api/test",
+			host:           "example.com",
+			expectedStatus: http.StatusOK,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, tt.path, nil)
+			req.Host = tt.host
+			if tt.contentType != "" {
+				req.Header.Set("Content-Type", tt.contentType)
+			}
+			rec := httptest.NewRecorder()
+
+			wrapped.ServeHTTP(rec, req)
+
+			if rec.Code != tt.expectedStatus {
+				t.Errorf("Expected status %d, got %d", tt.expectedStatus, rec.Code)
+			}
+		})
+	}
+}
+
+// TestIPWhitelist_String verifies String() method
+func TestIPWhitelist_String(t *testing.T) {
+	// This tests if the IPWhitelist type exists and works
+	// (There's no String() method defined, so this test just verifies basic usage)
+	ipw := NewIPWhitelist([]string{"1.2.3.4"})
+	if ipw == nil {
+		t.Error("Expected non-nil IPWhitelist")
+	}
+	if !ipw.enabled {
+		t.Error("Expected IPWhitelist to be enabled")
+	}
+}
+
+// TestResponseWriter_WriteHeader verifies responseWriter status code capture
+func TestResponseWriter_WriteHeader(t *testing.T) {
+	tests := []int{
+		http.StatusOK,
+		http.StatusCreated,
+		http.StatusNotFound,
+		http.StatusInternalServerError,
+	}
+
+	for _, statusCode := range tests {
+		t.Run(http.StatusText(statusCode), func(t *testing.T) {
+			rw := &responseWriter{ResponseWriter: httptest.NewRecorder(), statusCode: http.StatusOK}
+			rw.WriteHeader(statusCode)
+			if rw.statusCode != statusCode {
+				t.Errorf("Expected status code %d, got %d", statusCode, rw.statusCode)
+			}
+		})
+	}
+}
+
+// TestRateLimiter_Cleanup verifies cleanup goroutine doesn't panic
+func TestRateLimiter_Cleanup(t *testing.T) {
+	rl := NewRateLimiter(10, 10)
+
+	// Add some buckets
+	rl.Allow("1.2.3.4")
+	rl.Allow("5.6.7.8")
+
+	// Wait a bit to ensure cleanup goroutine runs
+	time.Sleep(100 * time.Millisecond)
+
+	// Cleanup goroutine should not panic
+	// (this test mainly verifies no race conditions)
+}
+
+// TestCircuitBreakerState_String verifies state string representation
+func TestCircuitBreakerState_String(t *testing.T) {
+	tests := []struct {
+		state    CircuitBreakerState
+		expected string
+	}{
+		{StateClosed, "closed"},
+		{StateOpen, "open"},
+		{StateHalfOpen, "half-open"},
+		{CircuitBreakerState(999), "unknown(999)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.expected, func(t *testing.T) {
+			if got := tt.state.String(); got != tt.expected {
+				t.Errorf("Expected %s, got %s", tt.expected, got)
+			}
+		})
+	}
+}

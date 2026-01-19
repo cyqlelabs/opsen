@@ -283,3 +283,198 @@ func TestServerConfig_SecurityDefaults(t *testing.T) {
 		t.Error("Expected TLS verification enabled by default")
 	}
 }
+
+// TestLoadServerConfig_InvalidYAML verifies error handling for invalid YAML
+func TestLoadServerConfig_InvalidYAML(t *testing.T) {
+	yamlContent := `
+port: 9090
+invalid yaml here
+`
+
+	tmpFile, err := os.CreateTemp("", "invalid-config-*.yml")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(yamlContent); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+	tmpFile.Close()
+
+	_, err = LoadServerConfig(tmpFile.Name())
+	if err == nil {
+		t.Error("Expected error for invalid YAML, got nil")
+	}
+}
+
+// TestLoadClientConfig_InvalidYAML verifies error handling for invalid YAML
+func TestLoadClientConfig_InvalidYAML(t *testing.T) {
+	yamlContent := `
+server_url: http://example.com
+this is not valid yaml: [
+`
+
+	tmpFile, err := os.CreateTemp("", "invalid-client-config-*.yml")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(yamlContent); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+	tmpFile.Close()
+
+	_, err = LoadClientConfig(tmpFile.Name())
+	if err == nil {
+		t.Error("Expected error for invalid YAML, got nil")
+	}
+}
+
+// TestSaveClientConfig verifies client config save/load
+func TestSaveClientConfig(t *testing.T) {
+	originalConfig := &ClientConfig{
+		ServerURL:       "https://example.com:8443",
+		ClientID:        "test-client-123",
+		Hostname:        "test-hostname",
+		WindowMinutes:   30,
+		ReportInterval:  120,
+		DiskPath:        "/data",
+		LogLevel:        "debug",
+		EndpointURL:     "https://backend.example.com:11000",
+		SkipGeolocation: true,
+		InsecureTLS:     true,
+		ServerKey:       "test-key-456",
+	}
+
+	tmpFile, err := os.CreateTemp("", "save-client-config-*.yml")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	// Save config
+	if err := SaveClientConfig(originalConfig, tmpFile.Name()); err != nil {
+		t.Fatalf("Failed to save client config: %v", err)
+	}
+
+	// Load config back
+	loadedConfig, err := LoadClientConfig(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("Failed to load saved client config: %v", err)
+	}
+
+	// Verify values match
+	if loadedConfig.ServerURL != originalConfig.ServerURL {
+		t.Errorf("ServerURL mismatch after save/load")
+	}
+	if loadedConfig.ClientID != originalConfig.ClientID {
+		t.Errorf("ClientID mismatch after save/load")
+	}
+	if loadedConfig.WindowMinutes != originalConfig.WindowMinutes {
+		t.Errorf("WindowMinutes mismatch after save/load")
+	}
+	if loadedConfig.EndpointURL != originalConfig.EndpointURL {
+		t.Errorf("EndpointURL mismatch after save/load")
+	}
+	if loadedConfig.SkipGeolocation != originalConfig.SkipGeolocation {
+		t.Errorf("SkipGeolocation mismatch after save/load")
+	}
+	if loadedConfig.InsecureTLS != originalConfig.InsecureTLS {
+		t.Errorf("InsecureTLS mismatch after save/load")
+	}
+}
+
+// TestServerConfig_EmptyTiers verifies tier fallback
+func TestServerConfig_EmptyTiers(t *testing.T) {
+	yamlContent := `
+port: 9090
+tiers: []
+`
+
+	tmpFile, err := os.CreateTemp("", "empty-tiers-*.yml")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.WriteString(yamlContent); err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+	tmpFile.Close()
+
+	config, err := LoadServerConfig(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	// Should fall back to default tiers
+	if len(config.Tiers) != 5 {
+		t.Errorf("Expected 5 default tiers when empty tiers provided, got %d", len(config.Tiers))
+	}
+}
+
+// TestServerConfig_HealthCheckDefaults verifies health check configuration
+func TestServerConfig_HealthCheckDefaults(t *testing.T) {
+	config, err := LoadServerConfig("")
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	if !config.HealthCheckEnabled {
+		t.Error("Expected health checks enabled by default")
+	}
+	if config.HealthCheckIntervalSecs != 10 {
+		t.Errorf("Expected health check interval 10s, got %d", config.HealthCheckIntervalSecs)
+	}
+	if config.HealthCheckTimeoutSecs != 2 {
+		t.Errorf("Expected health check timeout 2s, got %d", config.HealthCheckTimeoutSecs)
+	}
+	if config.HealthCheckType != "tcp" {
+		t.Errorf("Expected health check type 'tcp', got %s", config.HealthCheckType)
+	}
+	if config.HealthCheckPath != "/health" {
+		t.Errorf("Expected health check path '/health', got %s", config.HealthCheckPath)
+	}
+	if config.HealthCheckUnhealthyThreshold != 3 {
+		t.Errorf("Expected unhealthy threshold 3, got %d", config.HealthCheckUnhealthyThreshold)
+	}
+	if config.HealthCheckHealthyThreshold != 2 {
+		t.Errorf("Expected healthy threshold 2, got %d", config.HealthCheckHealthyThreshold)
+	}
+}
+
+// TestServerConfig_ProxyDefaults verifies proxy configuration
+func TestServerConfig_ProxyDefaults(t *testing.T) {
+	config, err := LoadServerConfig("")
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	if config.ProxySSEFlushInterval != -1 {
+		t.Errorf("Expected proxy SSE flush interval -1 (immediate), got %d", config.ProxySSEFlushInterval)
+	}
+	if len(config.ProxyEndpoints) != 0 {
+		t.Errorf("Expected no proxy endpoints by default, got %d", len(config.ProxyEndpoints))
+	}
+}
+
+// TestServerConfig_DatabaseDefaults verifies database configuration
+func TestServerConfig_DatabaseDefaults(t *testing.T) {
+	config, err := LoadServerConfig("")
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	if config.DBMaxOpenConns != 25 {
+		t.Errorf("Expected DB max open conns 25, got %d", config.DBMaxOpenConns)
+	}
+	if config.DBMaxIdleConns != 5 {
+		t.Errorf("Expected DB max idle conns 5, got %d", config.DBMaxIdleConns)
+	}
+	if config.DBConnMaxLifetime != 300 {
+		t.Errorf("Expected DB conn max lifetime 300s, got %d", config.DBConnMaxLifetime)
+	}
+}

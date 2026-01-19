@@ -327,3 +327,208 @@ func TestDefaultRetryConfig(t *testing.T) {
 		t.Errorf("Expected Multiplier > 1.0, got %.2f", config.Multiplier)
 	}
 }
+
+// TestCalculateAverage verifies average calculation
+func TestCalculateAverage(t *testing.T) {
+	collector := &MetricsCollector{}
+
+	tests := []struct {
+		name     string
+		samples  []float64
+		expected float64
+	}{
+		{
+			name:     "Normal values",
+			samples:  []float64{10.0, 20.0, 30.0},
+			expected: 20.0,
+		},
+		{
+			name:     "With zeros (ignored)",
+			samples:  []float64{10.0, 0.0, 30.0},
+			expected: 20.0,
+		},
+		{
+			name:     "All zeros",
+			samples:  []float64{0.0, 0.0, 0.0},
+			expected: 0.0,
+		},
+		{
+			name:     "Empty slice",
+			samples:  []float64{},
+			expected: 0.0,
+		},
+		{
+			name:     "Single value",
+			samples:  []float64{42.5},
+			expected: 42.5,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := collector.calculateAverage(tt.samples)
+			if result != tt.expected {
+				t.Errorf("Expected %.2f, got %.2f", tt.expected, result)
+			}
+		})
+	}
+}
+
+// TestGetStringOrDefault verifies string extraction with default
+func TestGetStringOrDefault(t *testing.T) {
+	tests := []struct {
+		name         string
+		m            map[string]interface{}
+		key          string
+		defaultValue string
+		expected     string
+	}{
+		{
+			name:         "Key exists with string value",
+			m:            map[string]interface{}{"key": "value"},
+			key:          "key",
+			defaultValue: "default",
+			expected:     "value",
+		},
+		{
+			name:         "Key doesn't exist",
+			m:            map[string]interface{}{},
+			key:          "missing",
+			defaultValue: "default",
+			expected:     "default",
+		},
+		{
+			name:         "Key exists but wrong type",
+			m:            map[string]interface{}{"key": 123},
+			key:          "key",
+			defaultValue: "default",
+			expected:     "default",
+		},
+		{
+			name:         "Key exists but nil",
+			m:            map[string]interface{}{"key": nil},
+			key:          "key",
+			defaultValue: "default",
+			expected:     "default",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := getStringOrDefault(tt.m, tt.key, tt.defaultValue)
+			if result != tt.expected {
+				t.Errorf("Expected %s, got %s", tt.expected, result)
+			}
+		})
+	}
+}
+
+// TestGetFloatOrDefault verifies float extraction with default
+func TestGetFloatOrDefault(t *testing.T) {
+	tests := []struct {
+		name         string
+		m            map[string]interface{}
+		key          string
+		defaultValue float64
+		expected     float64
+	}{
+		{
+			name:         "float64 value",
+			m:            map[string]interface{}{"key": 42.5},
+			key:          "key",
+			defaultValue: 0.0,
+			expected:     42.5,
+		},
+		{
+			name:         "float32 value",
+			m:            map[string]interface{}{"key": float32(42.5)},
+			key:          "key",
+			defaultValue: 0.0,
+			expected:     42.5,
+		},
+		{
+			name:         "int value",
+			m:            map[string]interface{}{"key": 42},
+			key:          "key",
+			defaultValue: 0.0,
+			expected:     42.0,
+		},
+		{
+			name:         "int64 value",
+			m:            map[string]interface{}{"key": int64(42)},
+			key:          "key",
+			defaultValue: 0.0,
+			expected:     42.0,
+		},
+		{
+			name:         "Key doesn't exist",
+			m:            map[string]interface{}{},
+			key:          "missing",
+			defaultValue: 99.9,
+			expected:     99.9,
+		},
+		{
+			name:         "Wrong type (string)",
+			m:            map[string]interface{}{"key": "not a number"},
+			key:          "key",
+			defaultValue: 99.9,
+			expected:     99.9,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := getFloatOrDefault(tt.m, tt.key, tt.defaultValue)
+			if result != tt.expected {
+				t.Errorf("Expected %.2f, got %.2f", tt.expected, result)
+			}
+		})
+	}
+}
+
+// TestCircuitBreaker_Reset verifies manual reset functionality
+func TestCircuitBreaker_Reset(t *testing.T) {
+	maxFailures := uint32(3)
+	resetTimeout := 1 * time.Second
+
+	cb := NewCircuitBreaker(maxFailures, resetTimeout)
+
+	// Trigger failures to open circuit
+	for i := uint32(0); i < maxFailures; i++ {
+		_ = cb.Call(func() error {
+			return ErrCircuitOpen
+		})
+	}
+
+	// Verify circuit is open
+	if cb.GetState() != StateOpen {
+		t.Fatalf("Expected circuit to be OPEN, got %s", cb.GetState())
+	}
+	if cb.GetFailures() != maxFailures {
+		t.Fatalf("Expected %d failures, got %d", maxFailures, cb.GetFailures())
+	}
+
+	// Reset circuit
+	cb.Reset()
+
+	// Verify circuit is closed and failures reset
+	if cb.GetState() != StateClosed {
+		t.Errorf("Expected circuit to be CLOSED after reset, got %s", cb.GetState())
+	}
+	if cb.GetFailures() != 0 {
+		t.Errorf("Expected 0 failures after reset, got %d", cb.GetFailures())
+	}
+
+	// Verify circuit works normally after reset
+	callExecuted := false
+	err := cb.Call(func() error {
+		callExecuted = true
+		return nil
+	})
+	if err != nil {
+		t.Errorf("Expected successful call after reset, got error: %v", err)
+	}
+	if !callExecuted {
+		t.Error("Function should have been called after reset")
+	}
+}

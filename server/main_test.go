@@ -1,7 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 	"time"
@@ -883,3 +886,256 @@ func findClientInList(clients []map[string]interface{}, clientID string) map[str
 	}
 	return nil
 }
+
+// TestHandleHealth verifies health check endpoint
+func TestHandleHealth(t *testing.T) {
+	db, cleanup := CreateTestDB(t)
+	defer cleanup()
+
+	server := NewTestServer(t, db)
+
+	// Register some clients
+	client1 := NewMockClient(MockClientOptions{
+		ClientID: "client-1",
+		Hostname: "host-1",
+	})
+	client2 := NewMockClient(MockClientOptions{
+		ClientID: "client-2",
+		Hostname: "host-2",
+	})
+
+	server.AddMockClient(client1)
+	server.AddMockClient(client2)
+
+	// Call health endpoint
+	req := httptest.NewRequest("GET", "/health", nil)
+	rec := httptest.NewRecorder()
+
+	server.handleHealth(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", rec.Code)
+	}
+
+	var response common.HealthCheckResponse
+	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if response.Status != "ok" {
+		t.Errorf("Expected status 'ok', got %s", response.Status)
+	}
+	if response.TotalClients != 2 {
+		t.Errorf("Expected 2 total clients, got %d", response.TotalClients)
+	}
+}
+
+// TestHandleListClients verifies client listing endpoint
+func TestHandleListClients(t *testing.T) {
+	db, cleanup := CreateTestDB(t)
+	defer cleanup()
+
+	server := NewTestServer(t, db)
+
+	// Register clients
+	client1 := NewMockClient(MockClientOptions{
+		ClientID: "client-1",
+		Hostname: "host-1",
+	})
+
+	server.AddMockClient(client1)
+
+	// Test listing all clients
+	req := httptest.NewRequest("GET", "/clients", nil)
+	rec := httptest.NewRecorder()
+
+	server.handleListClients(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", rec.Code)
+	}
+
+	var clients []map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&clients); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if len(clients) != 1 {
+		t.Errorf("Expected 1 client, got %d", len(clients))
+	}
+}
+
+// TestHandleListClients_ActiveOnly verifies active_only filter
+func TestHandleListClients_ActiveOnly(t *testing.T) {
+	db, cleanup := CreateTestDB(t)
+	defer cleanup()
+
+	server := NewTestServer(t, db)
+	server.staleTimeout = 100 * time.Millisecond
+
+	// Register client
+	client := NewMockClient(MockClientOptions{
+		ClientID: "client-1",
+		Hostname: "host-1",
+	})
+
+	server.AddMockClient(client)
+
+	// Make client stale by modifying LastSeen
+	server.mu.Lock()
+	if state, exists := server.clientCache[client.Registration.ClientID]; exists {
+		state.LastSeen = time.Now().Add(-200 * time.Millisecond)
+		server.clientCache[client.Registration.ClientID] = state
+	}
+	server.mu.Unlock()
+
+	// List with active_only=true
+	req := httptest.NewRequest("GET", "/clients?active_only=true", nil)
+	rec := httptest.NewRecorder()
+
+	server.handleListClients(rec, req)
+
+	var clients []map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&clients)
+
+	if len(clients) != 0 {
+		t.Errorf("Expected 0 active clients, got %d", len(clients))
+	}
+}
+
+// TestHandleListClients_WithGPUs verifies GPU stats formatting
+func TestHandleListClients_WithGPUs(t *testing.T) {
+	db, cleanup := CreateTestDB(t)
+	defer cleanup()
+
+	server := NewTestServer(t, db)
+
+	// Register client with GPU stats
+	client := NewMockClient(MockClientOptions{
+		ClientID: "gpu-client",
+		Hostname: "gpu-host",
+	})
+
+	server.AddMockClient(client)
+
+	// Add GPU stats to the client
+	server.mu.Lock()
+	if state, exists := server.clientCache["gpu-client"]; exists {
+		// Set total GPUs in registration (required for GPU fields to appear)
+		state.Registration.TotalGPUs = 2
+		state.Registration.GPUModels = []string{"NVIDIA RTX 4090", "NVIDIA RTX 4090"}
+
+		// Add GPU stats
+		state.Stats.GPUs = []common.GPUStats{
+			{
+				DeviceID:       0,
+				Name:           "NVIDIA RTX 4090",
+				UtilizationPct: 75.5,
+				MemoryUsedGB:   12.3,
+				MemoryTotalGB:  24.0,
+				TemperatureC:   68.0,
+				PowerDrawW:     350.5,
+			},
+			{
+				DeviceID:       1,
+				Name:           "NVIDIA RTX 4090",
+				UtilizationPct: 50.0,
+				MemoryUsedGB:   8.0,
+				MemoryTotalGB:  24.0,
+				TemperatureC:   55.0,
+				PowerDrawW:     0, // Test zero power draw case
+			},
+		}
+	}
+	server.mu.Unlock()
+
+	req := httptest.NewRequest("GET", "/clients", nil)
+	rec := httptest.NewRecorder()
+
+	server.handleListClients(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", rec.Code)
+	}
+
+	var clients []map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&clients); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if len(clients) != 1 {
+		t.Fatalf("Expected 1 client, got %d", len(clients))
+	}
+
+	// Verify GPU stats are included
+	gpuStats, ok := clients[0]["gpu_stats"].([]interface{})
+	if !ok {
+		t.Fatalf("Expected gpu_stats field as []interface{}, got %T", clients[0]["gpu_stats"])
+	}
+
+	if len(gpuStats) != 2 {
+		t.Fatalf("Expected 2 GPUs, got %d", len(gpuStats))
+	}
+
+	// Check first GPU (with power draw)
+	gpu0 := gpuStats[0].(map[string]interface{})
+	if gpu0["device_id"].(float64) != 0 {
+		t.Errorf("Expected device_id 0, got %v", gpu0["device_id"])
+	}
+	if gpu0["name"].(string) != "NVIDIA RTX 4090" {
+		t.Errorf("Expected GPU name, got %v", gpu0["name"])
+	}
+	if _, hasPower := gpu0["power_draw"]; !hasPower {
+		t.Error("Expected power_draw field for GPU with non-zero power")
+	}
+
+	// Check second GPU (without power draw)
+	gpu1 := gpuStats[1].(map[string]interface{})
+	if _, hasPower := gpu1["power_draw"]; hasPower {
+		t.Error("Expected no power_draw field for GPU with zero power")
+	}
+}
+
+// TestHandlePurgeStaleClients verifies purge endpoint
+func TestHandlePurgeStaleClients(t *testing.T) {
+	db, cleanup := CreateTestDB(t)
+	defer cleanup()
+
+	server := NewTestServer(t, db)
+	server.staleTimeout = 100 * time.Millisecond
+
+	// Register client
+	client := NewMockClient(MockClientOptions{
+		ClientID: "client-1",
+		Hostname: "host-1",
+	})
+
+	server.AddMockClient(client)
+
+	// Make client stale
+	server.mu.Lock()
+	if state, exists := server.clientCache[client.Registration.ClientID]; exists {
+		state.LastSeen = time.Now().Add(-200 * time.Millisecond)
+		server.clientCache[client.Registration.ClientID] = state
+	}
+	server.mu.Unlock()
+
+	// Purge stale clients
+	req := httptest.NewRequest("POST", "/purge-stale", nil)
+	rec := httptest.NewRecorder()
+
+	server.handlePurgeStaleClients(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", rec.Code)
+	}
+
+	var response map[string]interface{}
+	json.NewDecoder(rec.Body).Decode(&response)
+
+	purged := int(response["purged"].(float64))
+	if purged != 1 {
+		t.Errorf("Expected 1 purged client, got %d", purged)
+	}
+}
+

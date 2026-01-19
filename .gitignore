@@ -3,3 +3,8 @@ server.crt
 server.key
 *.mmdb
 GeoLite2-City.mmdb
+client_cov.out
+coverage.html
+coverage.out
+coverage_short.out
+server_cov.out
