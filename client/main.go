@@ -479,10 +479,10 @@ func (c *MetricsCollector) calculateCPUAverages() []float64 {
 		return []float64{}
 	}
 
-	// Find the first non-nil sample to determine number of cores
+	// Find the first non-empty sample to determine number of cores
 	var numCores int
 	for _, sample := range c.cpuSamples {
-		if sample != nil && len(sample) > 0 {
+		if len(sample) > 0 {
 			numCores = len(sample)
 			break
 		}
@@ -496,7 +496,7 @@ func (c *MetricsCollector) calculateCPUAverages() []float64 {
 	counts := make([]int, numCores)
 
 	for _, sample := range c.cpuSamples {
-		if sample == nil || len(sample) == 0 {
+		if len(sample) == 0 {
 			continue
 		}
 		for core := 0; core < len(sample) && core < numCores; core++ {

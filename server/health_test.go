@@ -117,7 +117,9 @@ func TestHealthCheck_HTTP_Success(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/health" {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("OK"))
+			if _, err := w.Write([]byte("OK")); err != nil {
+				t.Logf("Warning: Failed to write response: %v", err)
+			}
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}

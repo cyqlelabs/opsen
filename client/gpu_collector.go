@@ -38,13 +38,17 @@ func NewGPUCollector(samplesPerWindow int) *GPUCollector {
 	count, ret := nvml.DeviceGetCount()
 	if ret != nvml.SUCCESS {
 		log.Printf("GPU monitoring disabled: Failed to get device count (%v)", nvml.ErrorString(ret))
-		nvml.Shutdown()
+		if shutdownRet := nvml.Shutdown(); shutdownRet != nvml.SUCCESS {
+			log.Printf("Warning: NVML shutdown failed: %v", nvml.ErrorString(shutdownRet))
+		}
 		return collector
 	}
 
 	if count == 0 {
 		log.Printf("GPU monitoring disabled: No NVIDIA GPUs detected")
-		nvml.Shutdown()
+		if shutdownRet := nvml.Shutdown(); shutdownRet != nvml.SUCCESS {
+			log.Printf("Warning: NVML shutdown failed: %v", nvml.ErrorString(shutdownRet))
+		}
 		return collector
 	}
 
@@ -72,7 +76,9 @@ func NewGPUCollector(samplesPerWindow int) *GPUCollector {
 
 	if len(devices) == 0 {
 		log.Printf("GPU monitoring disabled: No usable NVIDIA GPUs found")
-		nvml.Shutdown()
+		if shutdownRet := nvml.Shutdown(); shutdownRet != nvml.SUCCESS {
+			log.Printf("Warning: NVML shutdown failed: %v", nvml.ErrorString(shutdownRet))
+		}
 		return collector
 	}
 
@@ -181,7 +187,7 @@ func (gc *GPUCollector) CalculateAverages() []common.GPUStats {
 
 	// Sum all samples
 	for _, sample := range gc.sampleWindow {
-		if sample == nil || len(sample) == 0 {
+		if len(sample) == 0 {
 			continue
 		}
 

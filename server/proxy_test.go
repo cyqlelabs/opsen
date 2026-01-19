@@ -380,7 +380,9 @@ func TestProxy_RegularHTTP(t *testing.T) {
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok","message":"hello from backend"}`))
+		if _, err := w.Write([]byte(`{"status":"ok","message":"hello from backend"}`)); err != nil {
+			t.Logf("Warning: Failed to write response: %v", err)
+		}
 	}))
 	defer backend.Close()
 
@@ -434,7 +436,9 @@ func TestProxy_POST_WithBody(t *testing.T) {
 		body, _ := io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		w.Write(body)
+		if _, err := w.Write(body); err != nil {
+			t.Logf("Warning: Failed to write response: %v", err)
+		}
 	}))
 	defer backend.Close()
 
