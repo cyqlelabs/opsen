@@ -142,7 +142,7 @@ func NewMockClient(opts MockClientOptions) *ClientState {
 		opts.LastSeen = time.Now()
 	}
 	if opts.Endpoint == "" {
-		opts.Endpoint = fmt.Sprintf("http://localhost:11000")
+		opts.Endpoint = "http://localhost:11000"
 	}
 
 	// Generate default CPU usage if not provided
