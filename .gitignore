@@ -8,3 +8,4 @@ coverage.html
 coverage.out
 coverage_short.out
 server_cov.out
+test_output.log
