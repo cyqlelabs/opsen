@@ -224,7 +224,9 @@ func TestHandleRoute_WithStickySession(t *testing.T) {
 	}
 
 	var firstResponse common.RoutingResponse
-	json.NewDecoder(rec.Body).Decode(&firstResponse)
+	if err := json.NewDecoder(rec.Body).Decode(&firstResponse); err != nil {
+		t.Fatalf("Failed to decode first response: %v", err)
+	}
 	firstClient := firstResponse.ClientID
 
 	// Second request with same sticky ID should get same client
@@ -237,7 +239,9 @@ func TestHandleRoute_WithStickySession(t *testing.T) {
 	server.handleRoute(rec2, req2)
 
 	var secondResponse common.RoutingResponse
-	json.NewDecoder(rec2.Body).Decode(&secondResponse)
+	if err := json.NewDecoder(rec2.Body).Decode(&secondResponse); err != nil {
+		t.Fatalf("Failed to decode second response: %v", err)
+	}
 
 	if secondResponse.ClientID != firstClient {
 		t.Errorf("Expected sticky session to route to %s, got %s", firstClient, secondResponse.ClientID)

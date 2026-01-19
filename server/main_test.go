@@ -996,7 +996,9 @@ func TestHandleListClients_ActiveOnly(t *testing.T) {
 	server.handleListClients(rec, req)
 
 	var clients []map[string]interface{}
-	json.NewDecoder(rec.Body).Decode(&clients)
+	if err := json.NewDecoder(rec.Body).Decode(&clients); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
 
 	if len(clients) != 0 {
 		t.Errorf("Expected 0 active clients, got %d", len(clients))
@@ -1131,9 +1133,15 @@ func TestHandlePurgeStaleClients(t *testing.T) {
 	}
 
 	var response map[string]interface{}
-	json.NewDecoder(rec.Body).Decode(&response)
+	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
 
-	purged := int(response["purged"].(float64))
+	purgedVal, ok := response["purged"]
+	if !ok {
+		t.Fatal("Expected 'purged' field in response")
+	}
+	purged := int(purgedVal.(float64))
 	if purged != 1 {
 		t.Errorf("Expected 1 purged client, got %d", purged)
 	}
