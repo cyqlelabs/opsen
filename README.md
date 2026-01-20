@@ -278,7 +278,7 @@ endpoint_url: http://backend-2.internal:8000
 endpoint_url: http://backend-3.internal:9000
 ```
 
-Each client monitors its backend's resources and reports to the same load balancer server.
+Each client monitors its own resources and reports to the same load balancer server.
 
 **Run:**
 ```bash
