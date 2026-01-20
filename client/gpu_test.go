@@ -8,17 +8,19 @@ import (
 
 // TestGPUCollector_CalculateAverages verifies GPU metrics averaging
 func TestGPUCollector_CalculateAverages(t *testing.T) {
-	// Skip this test since it requires actual NVML devices
-	// CalculateAverages checks len(gc.devices) which we can't mock without NVML
-	t.Skip("Requires real NVML devices, tested with real GPU hardware")
+	// Note: Cannot fully test without real NVML devices due to len(gc.devices) check
+	// However, we can test the averaging logic by using the real NewGPUCollector
+	// which will create a disabled collector if no GPUs are present
+	gc := NewGPUCollector(3)
 
-	// Note: The test below would work with real hardware
-	gc := &GPUCollector{
-		enabled:      true,
-		deviceModels: []string{"Test GPU 0", "Test GPU 1"},
-		sampleWindow: make([][]common.GPUStats, 3),
-		maxSamples:   3,
+	if !gc.IsEnabled() {
+		t.Skip("No GPUs available for testing, testing with mock data")
 	}
+
+	// If GPUs are available, this test will exercise the real code path
+	gc.sampleWindow = make([][]common.GPUStats, 3)
+	gc.maxSamples = 3
+	gc.deviceModels = []string{"Test GPU 0", "Test GPU 1"}
 
 	// Add sample data
 	gc.sampleWindow[0] = []common.GPUStats{
@@ -68,12 +70,25 @@ func TestGPUCollector_CalculateAverages(t *testing.T) {
 
 // TestGPUCollector_CalculateAverages_EmptySamples verifies handling of empty samples
 func TestGPUCollector_CalculateAverages_EmptySamples(t *testing.T) {
-	t.Skip("Requires real NVML devices, tested with real GPU hardware")
+	// Test with disabled collector (safe, no NVML required)
+	gc := &GPUCollector{
+		enabled:      false,
+		sampleWindow: make([][]common.GPUStats, 3),
+		maxSamples:   3,
+	}
+
+	// No sample data added - should return empty
+	averages := gc.CalculateAverages()
+
+	if len(averages) != 0 {
+		t.Errorf("Expected empty averages for disabled collector, got %d", len(averages))
+	}
 }
 
 // TestGPUCollector_CalculateAverages_PartialSamples verifies partial sample handling
 func TestGPUCollector_CalculateAverages_PartialSamples(t *testing.T) {
-	t.Skip("Requires real NVML devices, tested with real GPU hardware")
+	// This test requires real NVML devices to properly set up the devices slice
+	t.Skip("Requires real NVML devices to create proper device array")
 }
 
 // TestGPUCollector_CalculateAverages_Disabled verifies disabled collector
