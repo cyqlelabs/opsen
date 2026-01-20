@@ -26,7 +26,7 @@ func TestReportStats_Success(t *testing.T) {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"status": "received"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "received"})
 		}
 	}))
 	defer server.Close()
@@ -93,7 +93,7 @@ func TestReportStats_ServerError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/stats" {
 			w.WriteHeader(http.StatusBadGateway)
-			w.Write([]byte("Bad gateway"))
+			_, _ = w.Write([]byte("Bad gateway"))
 		}
 	}))
 	defer server.Close()
@@ -136,7 +136,7 @@ func TestReportStats_EmptyData(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/stats" {
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"status": "received"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "received"})
 		}
 	}))
 	defer server.Close()
@@ -232,7 +232,7 @@ func TestReportStats_WithGPUData(t *testing.T) {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"status": "received"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "received"})
 		}
 	}))
 	defer server.Close()

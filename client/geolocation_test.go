@@ -82,7 +82,7 @@ func TestRegister_SkipGeolocation(t *testing.T) {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"status": "registered"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "registered"})
 		}
 	}))
 	defer server.Close()
@@ -129,7 +129,7 @@ func TestRegister_WithGeoIPDB(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/register" {
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"status": "registered"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "registered"})
 		}
 	}))
 	defer server.Close()
@@ -173,7 +173,7 @@ func TestRegister_ServerError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/register" {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("Internal server error"))
+			_, _ = w.Write([]byte("Internal server error"))
 		}
 	}))
 	defer server.Close()
@@ -228,7 +228,7 @@ func TestRegister_WithGPUs(t *testing.T) {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"status": "registered"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "registered"})
 		}
 	}))
 	defer server.Close()
