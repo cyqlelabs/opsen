@@ -4,8 +4,6 @@ server.key
 *.mmdb
 GeoLite2-City.mmdb
 client_cov.out
-coverage.html
-coverage.out
-coverage_short.out
+coverage*.*
 server_cov.out
 test_output.log
