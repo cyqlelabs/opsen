@@ -23,7 +23,7 @@ func TestRegister_FullFlow(t *testing.T) {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{
+			_ = json.NewEncoder(w).Encode(map[string]string{
 				"status":    "registered",
 				"client_id": receivedReg.ClientID,
 			})
@@ -74,7 +74,7 @@ func TestGeolocation_ErrorHandling(t *testing.T) {
 	// Test with invalid server that returns error
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"error":  true,
 			"reason": "Service unavailable",
 		})
@@ -102,7 +102,7 @@ func TestGeolocation_ErrorHandling(t *testing.T) {
 func TestGeolocation_JSONParsing(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]interface{}{
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"latitude":     37.7749,
 			"longitude":    -122.4194,
 			"city":         "San Francisco",
@@ -163,7 +163,7 @@ func TestRegister_WithRetry(t *testing.T) {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{
+			_ = json.NewEncoder(w).Encode(map[string]string{
 				"status":    "registered",
 				"client_id": "retry-test",
 			})
@@ -218,7 +218,7 @@ func TestReportStats_DetailedMetrics(t *testing.T) {
 			}
 
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 		}
 	}))
 	defer server.Close()
@@ -292,8 +292,8 @@ func TestCircuitBreaker_FullStateFlow(t *testing.T) {
 		return http.ErrAbortHandler
 	}
 
-	cb.Call(failFunc)
-	cb.Call(failFunc)
+	_ = cb.Call(failFunc)
+	_ = cb.Call(failFunc)
 
 	// Should be open now
 	if cb.GetState() != StateOpen {
@@ -308,7 +308,7 @@ func TestCircuitBreaker_FullStateFlow(t *testing.T) {
 		return nil
 	}
 
-	cb.Call(successFunc)
+	_ = cb.Call(successFunc)
 
 	// After success in half-open, should return to closed
 	if cb.GetState() == StateClosed {
@@ -379,7 +379,7 @@ func TestRegister_ErrorResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/register" {
 			w.WriteHeader(http.StatusConflict)
-			w.Write([]byte("Client already registered"))
+			_, _ = w.Write([]byte("Client already registered"))
 		}
 	}))
 	defer server.Close()
