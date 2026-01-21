@@ -7,3 +7,5 @@ client_cov.out
 coverage*.*
 server_cov.out
 test_output.log
+artifacts
+release-assets
