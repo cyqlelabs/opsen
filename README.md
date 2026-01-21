@@ -22,10 +22,50 @@ Production-ready load balancer that routes traffic based on real-time CPU, RAM, 
 - 🚀 **Built-in Reverse Proxy** - SSE/streaming support, automatic tier detection, path preservation
 - ⚡ **Performance** - <15µs routing (100 backends), in-memory decisions, connection pooling
 
+## Quick Installation
+
+### One-Line Install (Linux/macOS)
+
+```bash
+curl -sSL https://raw.githubusercontent.com/cyqlelabs/opsen/main/scripts/install.sh | bash
+```
+
+This automatically detects your platform and installs pre-built binaries to `/usr/local/bin`.
+
+### Manual Installation
+
+**Download pre-built binaries** from [GitHub Releases](https://github.com/cyqlelabs/opsen/releases/latest):
+
+```bash
+# Linux AMD64
+wget https://github.com/cyqlelabs/opsen/releases/latest/download/opsen-server_VERSION_linux_amd64.tar.gz
+wget https://github.com/cyqlelabs/opsen/releases/latest/download/opsen-client_VERSION_linux_amd64.tar.gz
+tar xzf opsen-server_VERSION_linux_amd64.tar.gz
+tar xzf opsen-client_VERSION_linux_amd64.tar.gz
+sudo mv opsen-server opsen-client /usr/local/bin/
+```
+
+**Build from source** (requires Go 1.23+):
+
+```bash
+git clone https://github.com/cyqlelabs/opsen.git
+cd opsen
+make all
+sudo make install
+```
+
+### Verify Installation
+
+```bash
+opsen-server -version
+opsen-client -version
+```
+
 ## Table of Contents
 
+- [Quick Installation](#quick-installation)
 - [Architecture](#architecture)
-- [Building](#building)
+- [Building from Source](#building-from-source)
 - [Scripts](#scripts)
   - [`scripts/download-geoip.sh`](#scriptsdownload-geoipsh)
   - [`scripts/generate-tls-cert.sh`](#scriptsgenerate-tls-certsh)
@@ -60,7 +100,6 @@ Production-ready load balancer that routes traffic based on real-time CPU, RAM, 
 - [Health Checks & Latency Tracking](#health-checks--latency-tracking)
 - [Security Features](#security-features)
 - [Reliability Features](#reliability-features)
-- [Troubleshooting](#troubleshooting)
 - [License](#license)
 
 ## Architecture
@@ -79,7 +118,7 @@ Production-ready load balancer that routes traffic based on real-time CPU, RAM, 
 | gpu-inference | 8    | 32 GB  | 100 GB  | 1   | 16 GB      |
 | gpu-training  | 16   | 64 GB  | 500 GB  | 2   | 48 GB      |
 
-## Building
+## Building from Source
 
 ```bash
 # Build both client and server
@@ -685,22 +724,6 @@ curl http://localhost:8080/clients | jq '.[] | {hostname, health_status, latency
 **Database Pooling** - `db_max_open_conns: 25`, `db_max_idle_conns: 5`, `db_conn_max_lifetime: 300`.
 
 **Structured Logging** - `log_level: info`, `json_logging: true`. JSON or plain text with timestamp, level, file, line, data.
-
-## Troubleshooting
-
-**Client not appearing** - Check: `journalctl -u opsen-client -f`, server URL, `curl http://lb.example.com:8080/health`, geolocation API.
-
-**No available clients** - Check: `curl /clients`, sufficient resources, stale timeout, server logs `journalctl -u opsen-server -f`.
-
-**High memory** - Delete old stats: `DELETE FROM stats WHERE timestamp < datetime('now', '-7 days')`. Enable auto-vacuum: `PRAGMA auto_vacuum = FULL; VACUUM;`
-
-**Rate limit (429)** - Increase: `rate_limit_per_minute: 120`, `rate_limit_burst: 240`. Whitelist trusted IPs.
-
-**Auth errors (401/403)** - Verify `api_keys` in server.yml match client `X-API-Key` header.
-
-**Circuit breaker open** - Check: `curl /health`, client logs `grep "circuit"`. Auto-recovers in 30s. Manual: `systemctl restart opsen-client`.
-
-**TLS errors** - Dev: Set `insecure_tls: true` (client), `tls_insecure_skip_verify: true` (server). Prod: Use Let's Encrypt. Verify: `openssl x509 -in server.crt -text -noout`.
 
 ## License
 
