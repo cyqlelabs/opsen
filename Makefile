@@ -1,14 +1,18 @@
 .PHONY: all build-server build-client clean install test test-race test-coverage test-coverage-html test-short test-verbose benchmark lint deps
 
+# Version can be set via: make VERSION=v1.0.0
+VERSION ?= dev
+LDFLAGS := -ldflags="-s -w -X main.Version=$(VERSION)"
+
 all: build-server build-client
 
 build-server:
 	@echo "Building load balancer server..."
-	cd server && go build -o ../bin/opsen-server .
+	cd server && go build $(LDFLAGS) -o ../bin/opsen-server .
 
 build-client:
 	@echo "Building load balancer client..."
-	cd client && go build -o ../bin/opsen-client .
+	cd client && go build $(LDFLAGS) -o ../bin/opsen-client .
 
 clean:
 	@echo "Cleaning build artifacts..."
