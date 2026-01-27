@@ -113,9 +113,11 @@ func (l *Logger) log(level LogLevel, message string, data map[string]interface{}
 		}
 	}
 
+	timestamp := time.Now().Format("2006-01-02T15:04:05.000Z07:00")
+
 	if l.jsonFormat {
 		entry := LogEntry{
-			Timestamp: time.Now().Format(time.RFC3339),
+			Timestamp: timestamp,
 			Level:     level.String(),
 			Message:   message,
 			Prefix:    l.prefix,
@@ -144,7 +146,8 @@ func (l *Logger) log(level LogLevel, message string, data map[string]interface{}
 			dataStr = fmt.Sprintf(" | data=%s", string(dataBytes))
 		}
 
-		log.Printf("%s%s %s:%d - %s%s",
+		fmt.Printf("%s %s%s %s:%d - %s%s\n",
+			timestamp,
 			prefix,
 			level.String(),
 			file,
