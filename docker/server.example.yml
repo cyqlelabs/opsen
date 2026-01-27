@@ -1,0 +1,72 @@
+# Opsen Server Docker Configuration Example
+# This is a minimal configuration optimized for Docker deployments.
+# Override values via environment variables (see docker-compose.yml).
+
+# Server binding
+port: 8080
+host: 0.0.0.0
+
+# Database configuration
+database: /data/opsen.db
+db_max_open_conns: 25
+db_max_idle_conns: 5
+
+# Logging
+log_level: info
+json_logging: true  # Structured logging for container environments
+
+# Security - CHANGE IN PRODUCTION
+# Override via OPSEN_SERVER_API_KEY environment variable
+server_key: "change-me-in-production"
+
+# Client management
+stale_client_timeout_minutes: 5
+
+# Resource allocation
+pending_allocation_timeout_seconds: 120
+
+# Sticky sessions
+sticky_header: "X-Session-ID"
+sticky_affinity_enabled: true
+
+# Health checks
+health_check_enabled: true
+health_check_interval_seconds: 30
+health_check_timeout_seconds: 5
+health_check_unhealthy_threshold: 3
+health_check_healthy_threshold: 2
+health_check_type: tcp  # Options: tcp, http
+
+# Reverse proxy (optional)
+proxy_enabled: false
+proxy_endpoints: []
+# Example:
+# proxy_endpoints:
+#   - /api
+#   - /browse
+proxy_sse_flush_interval_ms: -1  # Immediate flush for SSE support
+
+# Tier specifications
+tiers:
+  - name: free
+    vcpu: 1
+    memory_gb: 1.0
+    storage_gb: 0
+
+  - name: pro
+    vcpu: 2
+    memory_gb: 4.0
+    storage_gb: 20
+
+  - name: enterprise
+    vcpu: 8
+    memory_gb: 16.0
+    storage_gb: 100
+
+  # GPU tier example
+  # - name: gpu-inference
+  #   vcpu: 4
+  #   memory_gb: 16.0
+  #   storage_gb: 50
+  #   gpu: 1
+  #   gpu_memory_gb: 16.0

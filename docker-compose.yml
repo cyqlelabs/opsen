@@ -1,0 +1,127 @@
+services:
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+      args:
+        VERSION: latest
+    image: opsen-server:latest
+    container_name: opsen-server
+    hostname: opsen-server
+    ports:
+      - "8080:8080"
+    volumes:
+      # Persistent database storage
+      - opsen-data:/data
+      # Optional: Persistent GeoIP database (avoids re-downloading on restart)
+      - opsen-geoip:/opt/geoip
+      # Optional: Custom configuration file
+      # - ./docker/server.example.yml:/etc/opsen/config.yml:ro
+      # Optional: TLS certificates
+      # - ./certs:/etc/opsen/certs:ro
+      # Optional: Manual GeoIP database mount (alternative to auto-download)
+      # - ./GeoLite2-City.mmdb:/opt/geoip/GeoLite2-City.mmdb:ro
+    environment:
+      # Basic configuration (CLI flags)
+      - OPSEN_SERVER_PORT=8080
+      - OPSEN_SERVER_HOST=0.0.0.0
+      - OPSEN_SERVER_DATABASE=/data/opsen.db
+
+      # MaxMind GeoIP Auto-Download (get free key from maxmind.com/en/geolite2/signup)
+      # Uncomment and set your credentials to enable automatic GeoIP database download
+      # - MAXMIND_LICENSE_KEY=your_license_key_here
+      # - MAXMIND_ACCOUNT_ID=your_account_id_here
+
+      # Optional: Stale client timeout in minutes (default: 5)
+      # - OPSEN_SERVER_STALE_TIMEOUT=5
+
+      # Optional: Cleanup interval in seconds (default: 300)
+      # - OPSEN_SERVER_CLEANUP_INTERVAL=300
+
+      # For advanced options (TLS, logging, auth, etc.), mount a config file:
+      # - OPSEN_CONFIG_FILE=/etc/opsen/config.yml
+    networks:
+      - opsen-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  client1:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+      args:
+        VERSION: latest
+    image: opsen-client:latest
+    container_name: opsen-client-1
+    hostname: client1
+    volumes:
+      # Required: Host system metrics
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      # Optional: Custom configuration file
+      # - ./docker/client.example.yml:/etc/opsen/config.yml:ro
+    environment:
+      # Server connection (CLI flags)
+      - OPSEN_CLIENT_SERVER_URL=http://opsen-server:8080
+
+      # Metrics collection
+      - OPSEN_CLIENT_WINDOW_MINUTES=15
+      - OPSEN_CLIENT_INTERVAL_SECONDS=60
+      - OPSEN_CLIENT_DISK_PATH=/
+
+      # For advanced options (hostname, endpoint, auth, logging, etc.), mount a config file:
+      # - OPSEN_CONFIG_FILE=/etc/opsen/config.yml
+    networks:
+      - opsen-network
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+    # Uncomment for GPU access (requires nvidia-docker)
+    # runtime: nvidia
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  client2:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+      args:
+        VERSION: latest
+    image: opsen-client:latest
+    container_name: opsen-client-2
+    hostname: client2
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+    environment:
+      - OPSEN_CLIENT_SERVER_URL=http://opsen-server:8080
+      - OPSEN_CLIENT_WINDOW_MINUTES=15
+      - OPSEN_CLIENT_INTERVAL_SECONDS=60
+      - OPSEN_CLIENT_DISK_PATH=/
+    networks:
+      - opsen-network
+    depends_on:
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+
+networks:
+  opsen-network:
+    driver: bridge
+
+volumes:
+  opsen-data:
+    driver: local
+  opsen-geoip:
+    driver: local

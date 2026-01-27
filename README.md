@@ -15,7 +15,7 @@ Production-ready load balancer that routes traffic based on real-time CPU, RAM, 
 
 **Key Features:**
 - 🎯 **Smart Routing** - Resource-aware (CPU, RAM, disk, GPU) + geography-based routing
-- 📦 **Simple Deployment** - Two binaries (server + client), YAML config, systemd integration
+- 📦 **Simple Deployment** - Two binaries (server + client), Docker support, YAML config, systemd integration
 - 🛡️ **Production Security** - API keys, IP whitelisting, rate limiting, TLS, request size limits, timeouts
 - 🔄 **High Reliability** - Circuit breaker, exponential backoff, panic recovery, graceful shutdown
 - 🎯 **Sticky Sessions** - Configurable session affinity via custom headers
@@ -31,6 +31,90 @@ curl -sSL https://raw.githubusercontent.com/cyqlelabs/opsen/main/scripts/install
 ```
 
 This automatically detects your platform and installs pre-built binaries to `/usr/local/bin`.
+
+### Docker
+
+**Quick Start with Docker Compose (Recommended for testing):**
+
+```bash
+git clone https://github.com/cyqlelabs/opsen.git
+cd opsen
+docker compose up -d
+
+# Verify it's running
+curl http://localhost:8080/health
+```
+
+This starts a server and two example clients. The server runs on `localhost:8080`.
+
+**Production Deployment:**
+
+```bash
+# Build images
+docker compose build
+
+# Start with custom environment variables
+OPSEN_SERVER_PORT=9000 docker compose up -d
+
+# Or use custom config files
+docker compose -f docker-compose.production.yml up -d
+```
+
+**Individual Containers:**
+
+```bash
+# Server
+docker build -f Dockerfile.server -t opsen-server .
+docker run -d \
+  -p 8080:8080 \
+  -v opsen-data:/data \
+  -e OPSEN_SERVER_PORT=8080 \
+  -e OPSEN_SERVER_DATABASE=/data/opsen.db \
+  opsen-server
+
+# Client
+docker build -f Dockerfile.client -t opsen-client .
+docker run -d \
+  -v /proc:/host/proc:ro \
+  -v /sys:/host/sys:ro \
+  -e OPSEN_CLIENT_SERVER_URL=http://opsen-server:8080 \
+  -e OPSEN_CLIENT_WINDOW_MINUTES=15 \
+  opsen-client
+```
+
+**Environment Variables:**
+
+Server:
+- `OPSEN_SERVER_PORT` - Port to listen on (default: 8080)
+- `OPSEN_SERVER_HOST` - Host to bind to (default: 0.0.0.0)
+- `OPSEN_SERVER_DATABASE` - Database path (default: /data/opsen.db)
+- `OPSEN_SERVER_STALE_TIMEOUT` - Client stale timeout in minutes (default: 5)
+- `MAXMIND_LICENSE_KEY` - MaxMind license for GeoIP auto-download
+- `MAXMIND_ACCOUNT_ID` - MaxMind account ID for GeoIP auto-download
+
+Client:
+- `OPSEN_CLIENT_SERVER_URL` - Load balancer server URL (required)
+- `OPSEN_CLIENT_WINDOW_MINUTES` - Metrics averaging window (default: 15)
+- `OPSEN_CLIENT_INTERVAL_SECONDS` - Report interval (default: 60)
+- `OPSEN_CLIENT_DISK_PATH` - Disk path to monitor (default: /)
+
+For advanced options (TLS, auth, logging, sticky sessions, etc.), mount a config file:
+```bash
+docker run -v ./server.yml:/etc/opsen/config.yml:ro opsen-server
+```
+
+**GPU Support:**
+
+For GPU monitoring, use NVIDIA Container Runtime:
+```bash
+docker run --gpus all -e OPSEN_CLIENT_SERVER_URL=http://server:8080 opsen-client
+```
+
+**Image Sizes:**
+- Server: ~33MB (Alpine-based)
+- Client: ~100MB (Debian-based, required for GPU support)
+
+See [docker-compose.yml](docker-compose.yml) for complete examples.
 
 ### Manual Installation
 
@@ -64,6 +148,9 @@ opsen-client -version
 ## Table of Contents
 
 - [Quick Installation](#quick-installation)
+  - [One-Line Install](#one-line-install-linuxmacos)
+  - [Docker](#docker)
+  - [Manual Installation](#manual-installation)
 - [Architecture](#architecture)
 - [Building from Source](#building-from-source)
 - [Scripts](#scripts)

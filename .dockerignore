@@ -1,0 +1,55 @@
+# Build artifacts
+bin/
+*.db
+*.out
+*.test
+*.prof
+
+# Git and version control
+.git/
+.gitignore
+.github/
+
+# Documentation
+docs/
+*.md
+LICENSE
+
+# Configuration files (will be mounted at runtime)
+*.yml
+*.yaml
+*.json
+
+# Certificates and keys
+*.crt
+*.key
+*.pem
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating system files
+.DS_Store
+Thumbs.db
+
+# Test coverage
+*.coverage
+coverage.html
+coverage.txt
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# GeoIP databases (downloaded at runtime or mounted)
+*.mmdb
+
+# Docker files (no need to copy into build context)
+docker-compose*.yml
+Dockerfile*
+.dockerignore

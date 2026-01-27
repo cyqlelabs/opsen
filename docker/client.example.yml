@@ -1,0 +1,34 @@
+# Opsen Client Docker Configuration Example
+# This is a minimal configuration optimized for Docker deployments.
+# Override values via environment variables (see docker-compose.yml).
+
+# Server connection
+server_url: http://opsen-server:8080
+
+# Client identification
+# hostname: client1  # Auto-detected from container hostname if not set
+# endpoint: http://client1:11000  # URL where application serves traffic
+
+# Security - CHANGE IN PRODUCTION
+# Override via OPSEN_CLIENT_API_KEY environment variable
+server_key: "change-me-in-production"
+
+# Metrics collection
+window_minutes: 15
+report_interval_seconds: 60
+disk_path: /
+
+# Geolocation
+skip_geolocation: true  # Docker containers don't have meaningful geo data
+
+# Logging
+log_level: info
+json_logging: true  # Structured logging for container environments
+
+# Retry configuration
+max_registration_retries: 10
+registration_retry_delay_seconds: 5
+
+# Circuit breaker
+circuit_breaker_threshold: 5
+circuit_breaker_timeout_seconds: 60

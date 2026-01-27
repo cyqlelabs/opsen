@@ -1,0 +1,57 @@
+# Multi-stage build for Opsen Server
+# Stage 1: Builder
+FROM golang:1.23-alpine AS builder
+
+# Install build dependencies (CGO required for SQLite)
+RUN apk add --no-cache gcc musl-dev
+
+WORKDIR /build
+
+# Copy go modules first for better layer caching
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build server binary with version embedding and optimization
+ARG VERSION=dev
+RUN CGO_ENABLED=1 GOOS=linux go build \
+    -ldflags="-s -w -X main.Version=${VERSION}" \
+    -o opsen-server \
+    ./server
+
+# Stage 2: Runtime
+FROM alpine:latest
+
+# Install runtime dependencies
+RUN apk add --no-cache ca-certificates curl tar gzip
+
+# Create non-root user
+RUN addgroup -g 1000 opsen && \
+    adduser -D -u 1000 -G opsen opsen
+
+# Create required directories
+RUN mkdir -p /data /etc/opsen /opt/geoip && \
+    chown -R opsen:opsen /data /opt/geoip
+
+# Copy binary from builder
+COPY --from=builder /build/opsen-server /usr/local/bin/opsen-server
+RUN chmod +x /usr/local/bin/opsen-server
+
+# Copy entrypoint script
+COPY docker/server-entrypoint.sh /docker/server-entrypoint.sh
+RUN chmod +x /docker/server-entrypoint.sh
+
+# Switch to non-root user
+USER opsen
+
+# Expose default port
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
+
+# Set entrypoint
+ENTRYPOINT ["/docker/server-entrypoint.sh"]
