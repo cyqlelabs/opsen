@@ -11,16 +11,21 @@ server_url: http://lb.example.com:8080
 # endpoint_url: ""
 
 # Geolocation configuration (optional)
+# By default, the client automatically downloads and uses the GeoIP database
+# from Opsen's S3 mirror (no authentication required) to ./GeoLite2-City.mmdb
+#
 # Option 1: Skip geolocation entirely (fastest, no distance-based routing)
 # skip_geolocation: true
-
-# Option 2: Use MaxMind GeoLite2 database (recommended to avoid API rate limits)
-# Download using: ./scripts/download-geoip.sh YOUR_LICENSE_KEY
-# Get a free license key: https://www.maxmind.com/en/geolite2/signup
-# geoip_db_path: ./GeoLite2-City.mmdb
-
-# Option 3: Use ipapi.co API (default, but has rate limits: 150 requests/day)
-# Automatically used if skip_geolocation is false and geoip_db_path is not set
+#
+# Option 2: Use custom GeoIP database path (default: ./GeoLite2-City.mmdb)
+# geoip_db_path: /path/to/GeoLite2-City.mmdb
+#
+# Option 3: Force ipapi.co API fallback (not recommended - has rate limits: 150 requests/day)
+# Set skip_geolocation: false and delete ./GeoLite2-City.mmdb file
+#
+# Manual database download/update (optional):
+# Run: ./scripts/download-geoip.sh
+# This downloads from: https://cyqle-opsen.s3.us-east-2.amazonaws.com/GeoLite2-City.mmdb
 
 # Unique client identifier (auto-generated if not specified)
 # client_id: ""

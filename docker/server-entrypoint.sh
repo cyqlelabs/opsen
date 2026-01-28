@@ -1,26 +1,6 @@
 #!/bin/sh
 set -e
 
-# MaxMind GeoIP Database Auto-Download
-GEOIP_DB="/opt/geoip/GeoLite2-City.mmdb"
-if [ ! -f "$GEOIP_DB" ] && [ -n "$MAXMIND_LICENSE_KEY" ] && [ -n "$MAXMIND_ACCOUNT_ID" ]; then
-    echo "Downloading MaxMind GeoLite2-City database..."
-    DOWNLOAD_URL="https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=${MAXMIND_LICENSE_KEY}&suffix=tar.gz"
-
-    if curl -sSL "$DOWNLOAD_URL" -o /tmp/geoip.tar.gz; then
-        tar -xzf /tmp/geoip.tar.gz -C /tmp
-        find /tmp -name "GeoLite2-City.mmdb" -exec mv {} "$GEOIP_DB" \;
-        rm -rf /tmp/geoip.tar.gz /tmp/GeoLite2-City_*
-        echo "MaxMind database downloaded successfully"
-    else
-        echo "Warning: Failed to download MaxMind database. Falling back to ipapi.co API"
-    fi
-elif [ -f "$GEOIP_DB" ]; then
-    echo "MaxMind GeoLite2-City database already present at $GEOIP_DB"
-else
-    echo "No MaxMind credentials provided. Server will fall back to ipapi.co API for geolocation"
-fi
-
 # Build CLI flags from environment variables
 # Note: Only basic flags are supported at CLI level; use config file for advanced options
 FLAGS=""

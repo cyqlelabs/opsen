@@ -68,11 +68,17 @@ proxy_endpoints:
 # tls_cert_file: /etc/ssl/certs/opsen.crt
 # tls_key_file: /etc/ssl/private/opsen.key
 
-# GeoIP database configuration (optional)
-# Path to MaxMind GeoLite2-City.mmdb for IP-based geolocation
-# When configured, server will lookup client location from IP address if coordinates not provided in /route request
-# Download using: ./scripts/download-geoip.sh YOUR_LICENSE_KEY
-# Get a free license key: https://www.maxmind.com/en/geolite2/signup
+# GeoIP database configuration (optional - only needed for /route request geolocation)
+# Backends (opsen-client) automatically download their own GeoIP database for self-location
+# Server GeoIP is ONLY used to determine the location of incoming /route requests (application origin)
+#
+# When to configure this:
+#   ✓ Multi-datacenter deployments where routing requests come from different regions
+#   ✓ You want distance-based routing from application origin to backends
+#   ✗ Single datacenter or all requests from same location (not needed)
+#
+# Download database: ./scripts/download-geoip.sh
+# Source: https://cyqle-opsen.s3.us-east-2.amazonaws.com/GeoLite2-City.mmdb (no auth required)
 # geoip_db_path: ./GeoLite2-City.mmdb
 
 # Sticky session configuration

@@ -32,8 +32,8 @@ RUN addgroup -g 1000 opsen && \
     adduser -D -u 1000 -G opsen opsen
 
 # Create required directories
-RUN mkdir -p /data /etc/opsen /opt/geoip && \
-    chown -R opsen:opsen /data /opt/geoip
+RUN mkdir -p /data /etc/opsen && \
+    chown -R opsen:opsen /data
 
 # Copy binary from builder
 COPY --from=builder /build/opsen-server /usr/local/bin/opsen-server

@@ -89,8 +89,6 @@ Server:
 - `OPSEN_SERVER_HOST` - Host to bind to (default: 0.0.0.0)
 - `OPSEN_SERVER_DATABASE` - Database path (default: /data/opsen.db)
 - `OPSEN_SERVER_STALE_TIMEOUT` - Client stale timeout in minutes (default: 5)
-- `MAXMIND_LICENSE_KEY` - MaxMind license for GeoIP auto-download
-- `MAXMIND_ACCOUNT_ID` - MaxMind account ID for GeoIP auto-download
 
 Client:
 - `OPSEN_CLIENT_SERVER_URL` - Load balancer server URL (required)
@@ -193,7 +191,7 @@ opsen-client -version
 
 **Server** (`opsen-server`) - Central routing coordinator that receives metrics and makes routing decisions based on resource availability, geography, and tier requirements.
 
-**Client** (`opsen-client`) - Runs on each backend, collects CPU/RAM/disk/GPU metrics (15min avg), reports to server every 60s. Supports NVIDIA GPUs via NVML (gracefully disabled if absent). Auto-detects geolocation via ipapi.co or MaxMind GeoIP.
+**Client** (`opsen-client`) - Runs on each backend, collects CPU/RAM/disk/GPU metrics (15min avg), reports to server every 60s. Supports NVIDIA GPUs via NVML (gracefully disabled if absent). Automatically downloads and uses MaxMind GeoIP database for location detection (falls back to ipapi.co if download fails).
 
 **Tiers** - Fully customizable resource specifications (vCPU, memory, storage, optional GPU + VRAM). Define tiers matching your infrastructure and pricing model.
 
@@ -234,15 +232,18 @@ Binaries are output to `bin/`:
 The repository includes helpful scripts for common setup tasks:
 
 ### `scripts/download-geoip.sh`
-Downloads the MaxMind GeoLite2-City database for geographic routing.
+Downloads the MaxMind GeoLite2-City database for geographic routing from Opsen's S3 mirror.
 
 ```bash
-./scripts/download-geoip.sh YOUR_LICENSE_KEY
-# or
-MAXMIND_LICENSE_KEY=your_key ./scripts/download-geoip.sh
+./scripts/download-geoip.sh [TARGET_PATH]
 ```
 
-Get a free license key at: https://www.maxmind.com/en/geolite2/signup
+**Note:** The client automatically downloads this database on first run. This script is only needed for:
+- Manual server-side GeoIP setup (optional, for routing request geolocation)
+- Updating the database (recommended monthly)
+- Custom installation paths
+
+Source: `https://cyqle-opsen.s3.us-east-2.amazonaws.com/GeoLite2-City.mmdb` (no authentication required)
 
 ### `scripts/generate-tls-cert.sh`
 Generates self-signed TLS certificates with Subject Alternative Names (SANs) for development/testing.
@@ -257,17 +258,23 @@ Generates self-signed TLS certificates with Subject Alternative Names (SANs) for
 
 Outputs `server.crt` and `server.key` ready for use in your server configuration.
 
-## GeoIP Setup (Optional)
+## GeoIP Setup (Automatic)
 
-For geographic routing, use MaxMind GeoLite2 database (free). Without it, system falls back to ipapi.co API (rate limited) or skips geolocation.
+**Client geolocation is automatic** - the client downloads the GeoIP database on first run to `./GeoLite2-City.mmdb`.
+
+**Server geolocation is optional** - only needed if you want distance calculation from routing request origin:
 
 ```bash
-# Get free license: https://www.maxmind.com/en/geolite2/signup
-./scripts/download-geoip.sh YOUR_LICENSE_KEY
+# Download for server (optional - only for multi-datacenter routing)
+./scripts/download-geoip.sh
 
-# Configure in YAML
+# Configure in server YAML
 geoip_db_path: ./GeoLite2-City.mmdb
 ```
+
+**When server GeoIP is needed:**
+- ✓ Multi-datacenter deployments with routing requests from different regions
+- ✗ Single datacenter (backends already have location via auto-download)
 
 Update monthly (first Tuesday) for best accuracy.
 
@@ -373,10 +380,10 @@ disk_path: /
 client_id: ""  # Auto-generated UUID if empty
 hostname: ""  # Uses system hostname if empty
 
-# Geolocation (3 options)
+# Geolocation (auto-downloads GeoIP database on first run)
 skip_geolocation: false  # Skip entirely (fastest)
-geoip_db_path: ""  # Use GeoLite2-City.mmdb (recommended)
-# Or use ipapi.co API (default, 150 req/day limit)
+geoip_db_path: ""  # Auto-downloads to ./GeoLite2-City.mmdb if not set
+# Falls back to ipapi.co API if download fails (150 req/day limit)
 
 # Logging & TLS
 log_level: info

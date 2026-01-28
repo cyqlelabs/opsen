@@ -227,9 +227,27 @@ func (c *MetricsCollector) register() error {
 
 	// Get geolocation (skip if configured)
 	if !c.config.SkipGeolocation {
+		// Default GeoIP database path if not configured
+		geoIPPath := c.config.GeoIPDBPath
+		if geoIPPath == "" {
+			geoIPPath = "./GeoLite2-City.mmdb"
+		}
+
+		// Try to download GeoIP database if it doesn't exist
+		if _, err := os.Stat(geoIPPath); os.IsNotExist(err) {
+			log.Printf("GeoIP database not found at %s, attempting to download...", geoIPPath)
+			if err := c.downloadGeoIPDatabase(geoIPPath); err != nil {
+				log.Printf("Warning: Failed to download GeoIP database: %v", err)
+				log.Printf("Falling back to ipapi.co API")
+				geoIPPath = "" // Clear path to trigger API fallback
+			} else {
+				log.Printf("GeoIP database downloaded successfully to %s", geoIPPath)
+			}
+		}
+
 		// Try GeoIP database first
-		if c.config.GeoIPDBPath != "" {
-			log.Printf("Using GeoIP database: %s", c.config.GeoIPDBPath)
+		if geoIPPath != "" {
+			log.Printf("Using GeoIP database: %s", geoIPPath)
 
 			// Get public IP first (GeoIP databases only work with public IPs)
 			publicIP, err = c.getPublicIP()
@@ -240,9 +258,11 @@ func (c *MetricsCollector) register() error {
 				log.Printf("Public IP detected: %s", publicIP)
 
 				// Lookup geolocation using public IP
-				geoData, err := c.getGeolocationFromDB(publicIP)
+				geoData, err := c.getGeolocationFromDB(geoIPPath)
 				if err != nil {
 					log.Printf("Warning: Failed to get geolocation from database: %v", err)
+					log.Printf("Falling back to ipapi.co API")
+					geoIPPath = "" // Trigger API fallback
 				} else {
 					latitude = geoData["latitude"].(float64)
 					longitude = geoData["longitude"].(float64)
@@ -252,15 +272,15 @@ func (c *MetricsCollector) register() error {
 						city, country, latitude, longitude)
 				}
 			}
-		} else {
-			// Fall back to API
+		}
+
+		// Fall back to API only if GeoIP failed or unavailable
+		if geoIPPath == "" && publicIP == "unknown" {
 			log.Printf("Fetching geolocation from ipapi.co...")
 			geoInfo, err := c.getGeolocation()
 			if err != nil {
 				log.Printf("Warning: Failed to get geolocation from API: %v", err)
-				log.Printf("Continuing without geolocation data. To avoid rate limits, consider:")
-				log.Printf("  1. Set skip_geolocation: true in config")
-				log.Printf("  2. Use GeoIP database: geoip_db_path: /path/to/GeoLite2-City.mmdb")
+				log.Printf("Continuing without geolocation data")
 			} else {
 				log.Printf("Geolocation API response: %+v", geoInfo)
 				publicIP = getStringOrDefault(geoInfo, "ip", "unknown")
@@ -595,16 +615,22 @@ func (c *MetricsCollector) getPublicIP() (string, error) {
 	return string(body), nil
 }
 
-func (c *MetricsCollector) getGeolocationFromDB(ipAddr string) (map[string]interface{}, error) {
-	db, err := geoip2.Open(c.config.GeoIPDBPath)
+func (c *MetricsCollector) getGeolocationFromDB(dbPath string) (map[string]interface{}, error) {
+	// Get public IP for lookup
+	publicIP, err := c.getPublicIP()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get public IP: %w", err)
+	}
+
+	db, err := geoip2.Open(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open GeoIP database: %w", err)
 	}
 	defer db.Close()
 
-	ip := net.ParseIP(ipAddr)
+	ip := net.ParseIP(publicIP)
 	if ip == nil {
-		return nil, fmt.Errorf("invalid IP address: %s", ipAddr)
+		return nil, fmt.Errorf("invalid IP address: %s", publicIP)
 	}
 
 	record, err := db.City(ip)
@@ -618,9 +644,42 @@ func (c *MetricsCollector) getGeolocationFromDB(ipAddr string) (map[string]inter
 	}
 
 	return map[string]interface{}{
+		"ip":        publicIP,
 		"latitude":  record.Location.Latitude,
 		"longitude": record.Location.Longitude,
 		"country":   record.Country.IsoCode,
 		"city":      cityName,
 	}, nil
+}
+
+func (c *MetricsCollector) downloadGeoIPDatabase(targetPath string) error {
+	downloadURL := "https://cyqle-opsen.s3.us-east-2.amazonaws.com/GeoLite2-City.mmdb"
+
+	log.Printf("Downloading GeoIP database from %s", downloadURL)
+
+	resp, err := c.httpClient.Get(downloadURL)
+	if err != nil {
+		return fmt.Errorf("failed to download database: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("download failed with status %d", resp.StatusCode)
+	}
+
+	// Create target file
+	file, err := os.Create(targetPath)
+	if err != nil {
+		return fmt.Errorf("failed to create file: %w", err)
+	}
+	defer file.Close()
+
+	// Copy downloaded content to file
+	_, err = io.Copy(file, resp.Body)
+	if err != nil {
+		os.Remove(targetPath) // Clean up partial file
+		return fmt.Errorf("failed to write database file: %w", err)
+	}
+
+	return nil
 }
