@@ -248,6 +248,7 @@ func main() {
 	mux.Handle("/route", ChainMiddleware(http.HandlerFunc(server.handleRoute), managementMiddlewares...))
 	mux.Handle("/clients", ChainMiddleware(http.HandlerFunc(server.handleListClients), managementMiddlewares...))
 	mux.Handle("/clients/purge", ChainMiddleware(http.HandlerFunc(server.handlePurgeStaleClients), managementMiddlewares...))
+	mux.Handle("/clients/purge-pending", ChainMiddleware(http.HandlerFunc(server.handlePurgePendingAllocations), managementMiddlewares...))
 
 	// Health check - minimal middleware (no auth, no rate limiting)
 	healthMiddlewares := []func(http.Handler) http.Handler{
@@ -1003,6 +1004,34 @@ func (s *Server) handlePurgeStaleClients(w http.ResponseWriter, r *http.Request)
 		"timestamp":     time.Now(),
 	}); err != nil {
 		log.Printf("Warning: Failed to encode purge response: %v", err)
+	}
+}
+
+func (s *Server) handlePurgePendingAllocations(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.mu.Lock()
+	totalRemoved := 0
+	for clientID, allocations := range s.pendingAllocations {
+		totalRemoved += len(allocations)
+		delete(s.pendingAllocations, clientID)
+	}
+	s.mu.Unlock()
+
+	LogInfoWithData("Manually purged all pending allocations", map[string]interface{}{
+		"removed": totalRemoved,
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":    "success",
+		"purged":    totalRemoved,
+		"timestamp": time.Now(),
+	}); err != nil {
+		log.Printf("Warning: Failed to encode purge pending response: %v", err)
 	}
 }
 

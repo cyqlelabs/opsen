@@ -21,8 +21,11 @@ server_key: "change-me-in-production"
 
 # Client management
 stale_client_timeout_minutes: 5
+cleanup_interval_seconds: 60  # How often to purge stale clients and pending allocations
 
 # Resource allocation
+# How long to keep resource reservations to prevent race conditions
+# Development: 30-60 seconds | Production: 120 seconds (default)
 pending_allocation_timeout_seconds: 120
 
 # Sticky sessions

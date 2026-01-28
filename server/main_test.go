@@ -1147,3 +1147,118 @@ func TestHandlePurgeStaleClients(t *testing.T) {
 	}
 }
 
+// TestHandlePurgePendingAllocations verifies purge pending allocations endpoint
+func TestHandlePurgePendingAllocations(t *testing.T) {
+	db, cleanup := CreateTestDB(t)
+	defer cleanup()
+
+	server := NewTestServer(t, db)
+
+	// Create client
+	client := NewMockClient(MockClientOptions{
+		ClientID:    "backend-1",
+		Latitude:    40.7128,
+		Longitude:   -74.0060,
+		CPUUsageAvg: []float64{10, 10, 10, 10, 10, 10, 10, 10},
+		MemoryAvail: 50.0,
+	})
+	server.AddMockClient(client)
+
+	tierSpec := server.tierSpecs["lite"]
+
+	// Create multiple pending allocations
+	server.selectClientWithStickiness("", "lite", tierSpec, 40.7128, -74.0060, "req-1")
+	server.selectClientWithStickiness("", "pro-standard", tierSpec, 40.7128, -74.0060, "req-2")
+	server.selectClientWithStickiness("session-1", "lite", tierSpec, 40.7128, -74.0060, "req-3")
+
+	// Verify allocations exist
+	server.mu.RLock()
+	initialCount := len(server.pendingAllocations["backend-1"])
+	server.mu.RUnlock()
+
+	if initialCount != 3 {
+		t.Fatalf("Expected 3 pending allocations, got %d", initialCount)
+	}
+
+	// Call purge endpoint with POST
+	req := httptest.NewRequest("POST", "/clients/purge-pending", nil)
+	rec := httptest.NewRecorder()
+
+	server.handlePurgePendingAllocations(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", rec.Code)
+	}
+
+	var response map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	purgedVal, ok := response["purged"]
+	if !ok {
+		t.Fatal("Expected 'purged' field in response")
+	}
+	purged := int(purgedVal.(float64))
+	if purged != 3 {
+		t.Errorf("Expected 3 purged allocations, got %d", purged)
+	}
+
+	// Verify allocations removed
+	server.mu.RLock()
+	finalCount := len(server.pendingAllocations)
+	server.mu.RUnlock()
+
+	if finalCount != 0 {
+		t.Errorf("Expected 0 pending allocations after purge, got %d", finalCount)
+	}
+}
+
+// TestHandlePurgePendingAllocations_DELETE verifies DELETE method works
+func TestHandlePurgePendingAllocations_DELETE(t *testing.T) {
+	db, cleanup := CreateTestDB(t)
+	defer cleanup()
+
+	server := NewTestServer(t, db)
+
+	// Create client with pending allocation
+	client := NewMockClient(MockClientOptions{
+		ClientID:    "backend-1",
+		Latitude:    40.7128,
+		Longitude:   -74.0060,
+		CPUUsageAvg: []float64{10, 10, 10, 10, 10, 10, 10, 10},
+		MemoryAvail: 50.0,
+	})
+	server.AddMockClient(client)
+
+	tierSpec := server.tierSpecs["lite"]
+	server.selectClientWithStickiness("", "lite", tierSpec, 40.7128, -74.0060, "req-1")
+
+	// Call purge endpoint with DELETE
+	req := httptest.NewRequest("DELETE", "/clients/purge-pending", nil)
+	rec := httptest.NewRecorder()
+
+	server.handlePurgePendingAllocations(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", rec.Code)
+	}
+}
+
+// TestHandlePurgePendingAllocations_MethodNotAllowed verifies GET is rejected
+func TestHandlePurgePendingAllocations_MethodNotAllowed(t *testing.T) {
+	db, cleanup := CreateTestDB(t)
+	defer cleanup()
+
+	server := NewTestServer(t, db)
+
+	req := httptest.NewRequest("GET", "/clients/purge-pending", nil)
+	rec := httptest.NewRecorder()
+
+	server.handlePurgePendingAllocations(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Errorf("Expected status 405 for GET method, got %d", rec.Code)
+	}
+}
+
