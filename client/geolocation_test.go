@@ -14,6 +14,7 @@ func TestGetGeolocationFromDB_InvalidIP(t *testing.T) {
 		config: Config{
 			GeoIPDBPath: "/nonexistent/path.mmdb",
 		},
+		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
 
 	_, err := collector.getGeolocationFromDB("not-an-ip")
@@ -28,6 +29,7 @@ func TestGetGeolocationFromDB_InvalidDBPath(t *testing.T) {
 		config: Config{
 			GeoIPDBPath: "/nonexistent/path/to/database.mmdb",
 		},
+		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
 
 	_, err := collector.getGeolocationFromDB("8.8.8.8")

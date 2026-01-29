@@ -172,6 +172,7 @@ func TestGetGeolocationFromDB_ValidIP(t *testing.T) {
 		config: Config{
 			GeoIPDBPath: "/nonexistent/path.mmdb",
 		},
+		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
 
 	// Test with valid IP format but nonexistent DB
@@ -187,6 +188,7 @@ func TestGetGeolocationFromDB_EmptyCity(t *testing.T) {
 		config: Config{
 			GeoIPDBPath: "/nonexistent/path.mmdb",
 		},
+		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
 
 	// This test documents that city name extraction from DB record

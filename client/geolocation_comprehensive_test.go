@@ -158,6 +158,7 @@ func TestGetGeolocationFromDB_Success(t *testing.T) {
 		config: Config{
 			GeoIPDBPath: dbPath,
 		},
+		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
 
 	// Test with Google DNS IP
@@ -199,6 +200,7 @@ func TestGetGeolocationFromDB_PrivateIP(t *testing.T) {
 		config: Config{
 			GeoIPDBPath: dbPath,
 		},
+		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
 
 	// Test with private IP (should fail or return no data)
@@ -226,6 +228,7 @@ func TestGetGeolocationFromDB_CityDataHandling(t *testing.T) {
 		config: Config{
 			GeoIPDBPath: dbPath,
 		},
+		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
 
 	// Some IPs might not have city data
@@ -249,6 +252,7 @@ func TestGetGeolocationFromDB_DatabaseNotFound(t *testing.T) {
 		config: Config{
 			GeoIPDBPath: "/nonexistent/path/to/GeoLite2-City.mmdb",
 		},
+		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
 
 	_, err := collector.getGeolocationFromDB("8.8.8.8")
@@ -277,6 +281,7 @@ func TestGetGeolocationFromDB_MultipleIPs(t *testing.T) {
 		config: Config{
 			GeoIPDBPath: dbPath,
 		},
+		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
 
 	testIPs := []string{
@@ -503,6 +508,7 @@ func TestGetGeolocationFromDB_CloseDatabase(t *testing.T) {
 		config: Config{
 			GeoIPDBPath: dbPath,
 		},
+		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
 
 	// Multiple calls should each open and close the database
@@ -526,6 +532,7 @@ func TestGetGeolocationFromDB_RelativePath(t *testing.T) {
 		config: Config{
 			GeoIPDBPath: dbPath,
 		},
+		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
 
 	// Should fail because file doesn't exist

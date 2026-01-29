@@ -323,7 +323,8 @@ func TestGetGeolocationFromDB_PathHandling(t *testing.T) {
 	}
 
 	collector := &MetricsCollector{
-		config: config,
+		config:     config,
+		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
 
 	// Empty path should fail gracefully
