@@ -2,9 +2,9 @@ name: Docker
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
-    branches: [main, develop]
+    branches: [main]
 
 jobs:
   docker:
@@ -47,6 +47,7 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/opsen-server:${{ steps.branch.outputs.name }}
+            ${{ github.ref == 'refs/heads/main' && format('ghcr.io/{0}/opsen-server:latest', github.repository_owner) || '' }}
           build-args: |
             VERSION=${{ steps.branch.outputs.name }}
           cache-from: type=gha
@@ -61,6 +62,7 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/opsen-client:${{ steps.branch.outputs.name }}
+            ${{ github.ref == 'refs/heads/main' && format('ghcr.io/{0}/opsen-client:latest', github.repository_owner) || '' }}
           build-args: |
             VERSION=${{ steps.branch.outputs.name }}
           cache-from: type=gha

@@ -34,6 +34,10 @@ This automatically detects your platform and installs pre-built binaries to `/us
 
 ### Docker
 
+**Pre-built images are available** from GitHub Container Registry (no authentication required):
+- `ghcr.io/cyqlelabs/opsen-server:latest`
+- `ghcr.io/cyqlelabs/opsen-client:latest`
+
 **Quick Start with Docker Compose (Recommended for testing):**
 
 ```bash
@@ -60,26 +64,34 @@ OPSEN_SERVER_PORT=9000 docker compose up -d
 docker compose -f docker-compose.production.yml up -d
 ```
 
-**Individual Containers:**
+**Individual Containers (using pre-built images):**
 
 ```bash
 # Server
-docker build -f Dockerfile.server -t opsen-server .
 docker run -d \
   -p 8080:8080 \
   -v opsen-data:/data \
   -e OPSEN_SERVER_PORT=8080 \
   -e OPSEN_SERVER_DATABASE=/data/opsen.db \
-  opsen-server
+  ghcr.io/cyqlelabs/opsen-server:latest
 
 # Client
-docker build -f Dockerfile.client -t opsen-client .
 docker run -d \
   -v /proc:/host/proc:ro \
   -v /sys:/host/sys:ro \
   -e OPSEN_CLIENT_SERVER_URL=http://opsen-server:8080 \
   -e OPSEN_CLIENT_WINDOW_MINUTES=15 \
-  opsen-client
+  ghcr.io/cyqlelabs/opsen-client:latest
+```
+
+**Build from source (optional):**
+
+```bash
+# Server
+docker build -f Dockerfile.server -t opsen-server .
+
+# Client
+docker build -f Dockerfile.client -t opsen-client .
 ```
 
 **Environment Variables:**
@@ -98,14 +110,14 @@ Client:
 
 For advanced options (TLS, auth, logging, sticky sessions, etc.), mount a config file:
 ```bash
-docker run -v ./server.yml:/etc/opsen/config.yml:ro opsen-server
+docker run -v ./server.yml:/etc/opsen/config.yml:ro ghcr.io/cyqlelabs/opsen-server:latest
 ```
 
 **GPU Support:**
 
 For GPU monitoring, use NVIDIA Container Runtime:
 ```bash
-docker run --gpus all -e OPSEN_CLIENT_SERVER_URL=http://server:8080 opsen-client
+docker run --gpus all -e OPSEN_CLIENT_SERVER_URL=http://server:8080 ghcr.io/cyqlelabs/opsen-client:latest
 ```
 
 **Image Sizes:**
