@@ -43,7 +43,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile.server
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/opsen-server:${{ steps.branch.outputs.name }}
@@ -57,7 +57,7 @@ jobs:
         with:
           context: .
           file: ./Dockerfile.client
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/opsen-client:${{ steps.branch.outputs.name }}
