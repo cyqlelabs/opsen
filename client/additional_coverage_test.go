@@ -19,7 +19,7 @@ func TestRegister_WithAPIKeyHeader(t *testing.T) {
 		if r.URL.Path == "/register" {
 			receivedKey = r.Header.Get("X-API-Key")
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{
+			_ = json.NewEncoder(w).Encode(map[string]string{
 				"status": "registered",
 			})
 		}
@@ -68,7 +68,7 @@ func TestRegister_WithoutAPIKeyHeader(t *testing.T) {
 		if r.URL.Path == "/register" {
 			receivedKey = r.Header.Get("X-API-Key")
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{
+			_ = json.NewEncoder(w).Encode(map[string]string{
 				"status": "registered",
 			})
 		}
@@ -463,9 +463,9 @@ func TestRegister_WithGeoLocation(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/register" {
-			json.NewDecoder(r.Body).Decode(&receivedData)
+			_ = json.NewDecoder(r.Body).Decode(&receivedData)
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]string{
+			_ = json.NewEncoder(w).Encode(map[string]string{
 				"status": "registered",
 			})
 		}
@@ -593,9 +593,7 @@ func TestCalculateCPUAverages_VariousSamples(t *testing.T) {
 			}
 
 			// Populate samples
-			for i, sample := range tt.samples {
-				collector.cpuSamples[i] = sample
-			}
+			copy(collector.cpuSamples, tt.samples)
 			collector.sampleIndex = len(tt.samples)
 
 			// Calculate averages
