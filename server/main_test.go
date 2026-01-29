@@ -223,6 +223,109 @@ func TestStickySession_FallbackOnOverload(t *testing.T) {
 	}
 }
 
+func TestStickySession_RapidSuccessiveRequests(t *testing.T) {
+	db, cleanup := CreateTestDB(t)
+	defer cleanup()
+
+	server := NewTestServer(t, db)
+
+	client := NewMockClient(MockClientOptions{
+		ClientID:    "backend-1",
+		Latitude:    40.7128,
+		Longitude:   -74.0060,
+		CPUUsageAvg: []float64{10, 10, 10, 10, 10, 10, 10, 10},
+		MemoryAvail: 50.0,
+	})
+
+	server.AddMockClient(client)
+
+	stickyID := "user-session-rapid"
+	tier := "lite"
+	tierSpec := server.tierSpecs[tier]
+
+	selected1 := server.selectClientWithStickiness(stickyID, tier, tierSpec, 40.7128, -74.0060, "req-1")
+	if selected1 == nil {
+		t.Fatal("First request failed")
+	}
+
+	server.mu.RLock()
+	pendingCountAfterFirst := len(server.pendingAllocations["backend-1"])
+	server.mu.RUnlock()
+
+	if pendingCountAfterFirst != 1 {
+		t.Errorf("Expected 1 pending allocation after first request, got %d", pendingCountAfterFirst)
+	}
+
+	for i := 2; i <= 5; i++ {
+		selected := server.selectClientWithStickiness(stickyID, tier, tierSpec, 40.7128, -74.0060, fmt.Sprintf("req-%d", i))
+		if selected == nil {
+			t.Fatalf("Request %d failed (should reuse existing sticky session)", i)
+		}
+
+		if selected.Registration.ClientID != "backend-1" {
+			t.Errorf("Request %d routed to wrong backend: %s", i, selected.Registration.ClientID)
+		}
+	}
+
+	server.mu.RLock()
+	pendingCountAfterAll := len(server.pendingAllocations["backend-1"])
+	server.mu.RUnlock()
+
+	if pendingCountAfterAll != 1 {
+		t.Errorf("Expected 1 pending allocation after all requests (no new allocations for existing sticky sessions), got %d", pendingCountAfterAll)
+	}
+}
+
+func TestStickySession_LimitedResourcesRapidRequests(t *testing.T) {
+	db, cleanup := CreateTestDB(t)
+	defer cleanup()
+
+	server := NewTestServer(t, db)
+
+	client := NewMockClient(MockClientOptions{
+		ClientID:    "limited-backend",
+		Latitude:    40.7128,
+		Longitude:   -74.0060,
+		CPUUsageAvg: []float64{10, 10, 90, 90, 90, 90, 90, 90},
+		MemoryAvail: 10.0,
+	})
+
+	server.AddMockClient(client)
+
+	stickyID := "user-session-limited"
+	tier := "lite"
+	tierSpec := server.tierSpecs[tier]
+
+	selected1 := server.selectClientWithStickiness(stickyID, tier, tierSpec, 40.7128, -74.0060, "req-1")
+	if selected1 == nil {
+		t.Fatal("First request failed")
+	}
+
+	selected2 := server.selectClientWithStickiness(stickyID, tier, tierSpec, 40.7128, -74.0060, "req-2")
+	if selected2 == nil {
+		t.Fatal("Second request failed")
+	}
+
+	if selected2.Registration.ClientID != "limited-backend" {
+		t.Errorf("Second request routed to wrong backend: %s", selected2.Registration.ClientID)
+	}
+
+	for i := 3; i <= 10; i++ {
+		selected := server.selectClientWithStickiness(stickyID, tier, tierSpec, 40.7128, -74.0060, fmt.Sprintf("req-%d", i))
+		if selected == nil {
+			t.Fatalf("Request %d failed (should reuse existing sticky session)", i)
+		}
+	}
+
+	server.mu.RLock()
+	pendingCount := len(server.pendingAllocations["limited-backend"])
+	server.mu.RUnlock()
+
+	if pendingCount != 1 {
+		t.Errorf("Expected exactly 1 pending allocation (from first request only), got %d", pendingCount)
+	}
+}
+
 // ========================================
 // RESOURCE ALLOCATION TESTS
 // ========================================

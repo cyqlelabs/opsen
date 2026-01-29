@@ -1361,9 +1361,6 @@ func (s *Server) selectClientWithStickiness(stickyID, tier string, tierSpec comm
 	// Try to use existing assignment for this sticky_id + tier
 	client := s.findStickyAssignment(stickyID, tier, tierSpec)
 	if client != nil {
-		// Reserve resources for this request
-		s.addPendingAllocation(client.Registration.ClientID, stickyID, tier, tierSpec, requestID)
-
 		LogInfoWithData("Using sticky assignment", map[string]interface{}{
 			"sticky_id": stickyID,
 			"tier":      tier,
