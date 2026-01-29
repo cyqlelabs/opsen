@@ -106,7 +106,7 @@ make clean
 - Samples GPU metrics using NVML (NVIDIA Management Library) if available
 - Averages samples over configurable time window (default: 15 minutes)
 - Reports averaged stats to server every 60 seconds
-- Handles geolocation via MaxMind GeoIP database or ipapi.co API
+- Handles geolocation via MaxMind GeoIP database (auto-downloads from S3 if not present)
 - GPU monitoring gracefully disabled if no NVIDIA GPUs present
 
 ### Common (`common/`)

@@ -203,7 +203,7 @@ opsen-client -version
 
 **Server** (`opsen-server`) - Central routing coordinator that receives metrics and makes routing decisions based on resource availability, geography, and tier requirements.
 
-**Client** (`opsen-client`) - Runs on each backend, collects CPU/RAM/disk/GPU metrics (15min avg), reports to server every 60s. Supports NVIDIA GPUs via NVML (gracefully disabled if absent). Automatically downloads and uses MaxMind GeoIP database for location detection (falls back to ipapi.co if download fails).
+**Client** (`opsen-client`) - Runs on each backend, collects CPU/RAM/disk/GPU metrics (15min avg), reports to server every 60s. Supports NVIDIA GPUs via NVML (gracefully disabled if absent). Automatically downloads and uses MaxMind GeoIP database for location detection.
 
 **Tiers** - Fully customizable resource specifications (vCPU, memory, storage, optional GPU + VRAM). Define tiers matching your infrastructure and pricing model.
 
@@ -395,7 +395,6 @@ hostname: ""  # Uses system hostname if empty
 # Geolocation (auto-downloads GeoIP database on first run)
 skip_geolocation: false  # Skip entirely (fastest)
 geoip_db_path: ""  # Auto-downloads to ./GeoLite2-City.mmdb if not set
-# Falls back to ipapi.co API if download fails (150 req/day limit)
 
 # Logging & TLS
 log_level: info

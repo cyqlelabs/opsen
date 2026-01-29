@@ -238,22 +238,20 @@ func (c *MetricsCollector) register() error {
 			log.Printf("GeoIP database not found at %s, attempting to download...", geoIPPath)
 			if err := c.downloadGeoIPDatabase(geoIPPath); err != nil {
 				log.Printf("Warning: Failed to download GeoIP database: %v", err)
-				log.Printf("Falling back to ipapi.co API")
-				geoIPPath = "" // Clear path to trigger API fallback
+				log.Printf("Continuing without geolocation data")
 			} else {
 				log.Printf("GeoIP database downloaded successfully to %s", geoIPPath)
 			}
 		}
 
-		// Try GeoIP database first
-		if geoIPPath != "" {
+		// Try GeoIP database lookup
+		if _, err := os.Stat(geoIPPath); err == nil {
 			log.Printf("Using GeoIP database: %s", geoIPPath)
 
 			// Get public IP first (GeoIP databases only work with public IPs)
 			publicIP, err = c.getPublicIP()
 			if err != nil {
 				log.Printf("Warning: Failed to get public IP: %v", err)
-				publicIP = "unknown"
 			} else {
 				log.Printf("Public IP detected: %s", publicIP)
 
@@ -261,8 +259,7 @@ func (c *MetricsCollector) register() error {
 				geoData, err := c.getGeolocationFromDB(geoIPPath)
 				if err != nil {
 					log.Printf("Warning: Failed to get geolocation from database: %v", err)
-					log.Printf("Falling back to ipapi.co API")
-					geoIPPath = "" // Trigger API fallback
+					log.Printf("Continuing without geolocation data")
 				} else {
 					latitude = geoData["latitude"].(float64)
 					longitude = geoData["longitude"].(float64)
@@ -271,23 +268,6 @@ func (c *MetricsCollector) register() error {
 					log.Printf("GeoIP database lookup: City=%s, Country=%s, Coords=(%.4f, %.4f)",
 						city, country, latitude, longitude)
 				}
-			}
-		}
-
-		// Fall back to API only if GeoIP failed or unavailable
-		if geoIPPath == "" && publicIP == "unknown" {
-			log.Printf("Fetching geolocation from ipapi.co...")
-			geoInfo, err := c.getGeolocation()
-			if err != nil {
-				log.Printf("Warning: Failed to get geolocation from API: %v", err)
-				log.Printf("Continuing without geolocation data")
-			} else {
-				log.Printf("Geolocation API response: %+v", geoInfo)
-				publicIP = getStringOrDefault(geoInfo, "ip", "unknown")
-				latitude = getFloatOrDefault(geoInfo, "latitude", 0.0)
-				longitude = getFloatOrDefault(geoInfo, "longitude", 0.0)
-				country = getStringOrDefault(geoInfo, "country", "unknown")
-				city = getStringOrDefault(geoInfo, "city", "unknown")
 			}
 		}
 	} else {
@@ -350,42 +330,6 @@ func (c *MetricsCollector) register() error {
 	}
 
 	return nil
-}
-
-func (c *MetricsCollector) getGeolocation() (map[string]interface{}, error) {
-	log.Printf("Requesting geolocation from https://ipapi.co/json/")
-
-	resp, err := c.httpClient.Get("https://ipapi.co/json/")
-	if err != nil {
-		return nil, fmt.Errorf("http request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	log.Printf("Geolocation API response status: %s", resp.Status)
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	log.Printf("Geolocation API raw response: %s", string(body))
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse JSON: %w", err)
-	}
-
-	// Check for API error response
-	if errMsg, ok := result["error"].(bool); ok && errMsg {
-		reason := getStringOrDefault(result, "reason", "unknown error")
-		return nil, fmt.Errorf("API error: %s", reason)
-	}
-
-	return result, nil
 }
 
 func (c *MetricsCollector) collectMetrics() {

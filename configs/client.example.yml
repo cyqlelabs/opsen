@@ -20,9 +20,6 @@ server_url: http://lb.example.com:8080
 # Option 2: Use custom GeoIP database path (default: ./GeoLite2-City.mmdb)
 # geoip_db_path: /path/to/GeoLite2-City.mmdb
 #
-# Option 3: Force ipapi.co API fallback (not recommended - has rate limits: 150 requests/day)
-# Set skip_geolocation: false and delete ./GeoLite2-City.mmdb file
-#
 # Manual database download/update (optional):
 # Run: ./scripts/download-geoip.sh
 # This downloads from: https://cyqle-opsen.s3.us-east-2.amazonaws.com/GeoLite2-City.mmdb

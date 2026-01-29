@@ -17,13 +17,10 @@ endpoint_url: "https://127.0.0.1:11000"
 # Option 1: Skip geolocation entirely (fastest, no distance-based routing)
 skip_geolocation: false
 
-# Option 2: Use MaxMind GeoLite2 database (recommended to avoid API rate limits)
-# Download using: ./scripts/download-geoip.sh YOUR_LICENSE_KEY
-# Get a free license key: https://www.maxmind.com/en/geolite2/signup
+# Option 2: Use MaxMind GeoLite2 database (auto-downloads from S3 if not present)
+# The client will automatically download the database to ./GeoLite2-City.mmdb on first run
+# Or manually specify a custom path:
 geoip_db_path: /home/nico/dev/projects/cyqle/opsen/GeoLite2-City.mmdb
-
-# Option 3: Use ipapi.co API (default, but has rate limits: 150 requests/day)
-# Automatically used if skip_geolocation is false and geoip_db_path is not set
 
 # Unique client identifier (auto-generated if not specified)
 # client_id: ""
