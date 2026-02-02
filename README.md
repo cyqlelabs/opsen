@@ -320,8 +320,8 @@ json_logging: false
 server_key: "" # Client auth (opsen-client must match)
 api_keys: [] # Additional API keys for other integrations
 whitelisted_ips: [] # CIDR ranges (empty = allow all)
-rate_limit_per_minute: 60
-rate_limit_burst: 120
+rate_limit_per_minute: 60 # Requests per minute per IP (0 = disabled)
+rate_limit_burst: 120 # Burst capacity
 max_request_body_bytes: 10485760 # 10MB
 request_timeout_seconds: 30
 read_header_timeout_seconds: 10 # Slowloris protection
@@ -449,7 +449,7 @@ Each client monitors its own resources and reports to the same load balancer ser
 
 ## API Endpoints
 
-All endpoints except `/health` support API key auth (`X-API-Key` header). Rate limited per IP (60/min, burst 120). Security headers included automatically.
+All endpoints except `/health` support API key auth (`X-API-Key` header). Rate limited per IP (60/min, burst 120 by default; can be disabled). Security headers included automatically.
 
 ### POST /register
 
@@ -847,7 +847,7 @@ curl http://localhost:8080/clients | jq '.[] | {hostname, health_status, latency
 
 **IP Whitelisting** - `whitelisted_ips[]` (CIDR ranges). Empty = allow all.
 
-**Rate Limiting** - Token bucket per IP. `rate_limit_per_minute: 60`, `rate_limit_burst: 120`. Returns 429 on excess.
+**Rate Limiting** - Token bucket per IP with continuous token refill. `rate_limit_per_minute: 60`, `rate_limit_burst: 120`. Returns 429 on excess. Set `rate_limit_per_minute: 0` to disable (useful for trusted networks, internal APIs, or when rate limiting is handled by upstream WAF/CDN).
 
 **Request Size Limits** - `max_request_body_bytes: 10485760` (10MB). Returns 413 on excess.
 

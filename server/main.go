@@ -185,7 +185,10 @@ func main() {
 	go server.runHealthChecks(ctx)
 
 	// Initialize middlewares
-	rateLimiter := NewRateLimiter(yamlConfig.RateLimitPerMinute, yamlConfig.RateLimitBurst)
+	var rateLimiter *RateLimiter
+	if yamlConfig.RateLimitPerMinute > 0 {
+		rateLimiter = NewRateLimiter(yamlConfig.RateLimitPerMinute, yamlConfig.RateLimitBurst)
+	}
 	apiKeyAuth := NewAPIKeyAuth(yamlConfig.ServerKey, yamlConfig.APIKeys)
 	ipWhitelist := NewIPWhitelist(yamlConfig.WhitelistedIPs)
 	inputValidator := &InputValidator{}
@@ -194,6 +197,7 @@ func main() {
 		"server_key_enabled":   yamlConfig.ServerKey != "",
 		"api_keys_enabled":     len(yamlConfig.APIKeys) > 0,
 		"ip_whitelist_enabled": len(yamlConfig.WhitelistedIPs) > 0,
+		"rate_limit_enabled":   yamlConfig.RateLimitPerMinute > 0,
 		"rate_limit_per_min":   yamlConfig.RateLimitPerMinute,
 		"rate_limit_burst":     yamlConfig.RateLimitBurst,
 		"max_request_bytes":    yamlConfig.MaxRequestBodyBytes,
@@ -227,8 +231,10 @@ func main() {
 		inputValidator.Middleware,
 		apiKeyAuth.Middleware,
 		ipWhitelist.Middleware,
-		rateLimiter.Middleware,
 	)
+	if rateLimiter != nil {
+		managementMiddlewares = append(managementMiddlewares, rateLimiter.Middleware)
+	}
 
 	// Proxy endpoint middlewares (NO auth - these are for end users)
 	proxyMiddlewares := []func(http.Handler) http.Handler{
@@ -241,8 +247,10 @@ func main() {
 		RequestLogger,
 		RequestSizeLimit(yamlConfig.MaxRequestBodyBytes),
 		Timeout(time.Duration(yamlConfig.RequestTimeout) * time.Second),
-		rateLimiter.Middleware,
 	)
+	if rateLimiter != nil {
+		proxyMiddlewares = append(proxyMiddlewares, rateLimiter.Middleware)
+	}
 
 	// Add CORS if enabled
 	if yamlConfig.EnableCORS {
