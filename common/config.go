@@ -35,6 +35,7 @@ type ServerConfig struct {
 	EnableCORS          bool     `yaml:"enable_cors"`           // Enable CORS
 	CORSAllowedOrigins  []string `yaml:"cors_allowed_origins"`  // CORS allowed origins
 	ReadHeaderTimeout   int      `yaml:"read_header_timeout_seconds"` // ReadHeaderTimeout prevents Slowloris attacks
+	DisableSecurityHeaders bool  `yaml:"disable_security_headers"` // Disable automatic security headers (X-Frame-Options, X-XSS-Protection, etc.)
 
 	// Geolocation configuration
 	GeoIPDBPath         string `yaml:"geoip_db_path"`         // Optional: Path to MaxMind GeoLite2-City.mmdb for IP lookup
@@ -108,6 +109,7 @@ func LoadServerConfig(path string) (*ServerConfig, error) {
 		RequestTimeout:      30,           // 30 second request timeout
 		ReadHeaderTimeout:   10,           // 10 second read header timeout (Slowloris protection)
 		TLSInsecureSkipVerify: false,      // Secure by default
+		DisableSecurityHeaders: false,     // Enable security headers by default
 
 		// Sticky session defaults
 		StickyHeader:          "",         // Disabled by default

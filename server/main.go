@@ -216,7 +216,11 @@ func main() {
 	// Management endpoint middlewares (require auth if configured)
 	managementMiddlewares := []func(http.Handler) http.Handler{
 		PanicRecovery,
-		SecurityHeaders,
+	}
+	if !yamlConfig.DisableSecurityHeaders {
+		managementMiddlewares = append(managementMiddlewares, SecurityHeaders)
+	}
+	managementMiddlewares = append(managementMiddlewares,
 		RequestLogger,
 		RequestSizeLimit(yamlConfig.MaxRequestBodyBytes),
 		Timeout(time.Duration(yamlConfig.RequestTimeout) * time.Second),
@@ -224,17 +228,21 @@ func main() {
 		apiKeyAuth.Middleware,
 		ipWhitelist.Middleware,
 		rateLimiter.Middleware,
-	}
+	)
 
 	// Proxy endpoint middlewares (NO auth - these are for end users)
 	proxyMiddlewares := []func(http.Handler) http.Handler{
 		PanicRecovery,
-		SecurityHeaders,
+	}
+	if !yamlConfig.DisableSecurityHeaders {
+		proxyMiddlewares = append(proxyMiddlewares, SecurityHeaders)
+	}
+	proxyMiddlewares = append(proxyMiddlewares,
 		RequestLogger,
 		RequestSizeLimit(yamlConfig.MaxRequestBodyBytes),
 		Timeout(time.Duration(yamlConfig.RequestTimeout) * time.Second),
 		rateLimiter.Middleware,
-	}
+	)
 
 	// Add CORS if enabled
 	if yamlConfig.EnableCORS {
@@ -257,7 +265,9 @@ func main() {
 	// Health check - minimal middleware (no auth, no rate limiting)
 	healthMiddlewares := []func(http.Handler) http.Handler{
 		PanicRecovery,
-		SecurityHeaders,
+	}
+	if !yamlConfig.DisableSecurityHeaders {
+		healthMiddlewares = append(healthMiddlewares, SecurityHeaders)
 	}
 	mux.Handle("/health", ChainMiddleware(http.HandlerFunc(server.handleHealth), healthMiddlewares...))
 

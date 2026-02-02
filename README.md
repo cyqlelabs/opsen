@@ -325,6 +325,7 @@ rate_limit_burst: 120
 max_request_body_bytes: 10485760 # 10MB
 request_timeout_seconds: 30
 read_header_timeout_seconds: 10 # Slowloris protection
+disable_security_headers: false # Disable X-Frame-Options, X-XSS-Protection, etc. (e.g., when using WAF)
 
 # TLS
 tls_cert_file: "" # Empty = HTTP only
@@ -856,7 +857,7 @@ curl http://localhost:8080/clients | jq '.[] | {hostname, health_status, latency
 
 **CORS** - `enable_cors: true`, `cors_allowed_origins[]`.
 
-**Security Headers** - Auto-added: `X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Strict-Transport-Security` (HTTPS).
+**Security Headers** - Auto-added: `X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Strict-Transport-Security` (HTTPS). Can be disabled via `disable_security_headers: true` (e.g., when using a WAF/reverse proxy that manages headers).
 
 **Input Validation** - Content-Type, path traversal, host injection, IP formats, tier names.
 

@@ -546,6 +546,34 @@ func TestSecurityHeaders(t *testing.T) {
 	}
 }
 
+// TestSecurityHeadersDisabled verifies security headers are not set when middleware is not applied
+func TestSecurityHeadersDisabled(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// Don't wrap with SecurityHeaders middleware
+	req := httptest.NewRequest("GET", "/test", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	// Verify security headers are NOT set
+	securityHeaders := []string{
+		"X-Content-Type-Options",
+		"X-Frame-Options",
+		"X-XSS-Protection",
+		"Strict-Transport-Security",
+	}
+
+	for _, header := range securityHeaders {
+		actualValue := rec.Header().Get(header)
+		if actualValue != "" {
+			t.Errorf("Header %s should not be set, but got: %s", header, actualValue)
+		}
+	}
+}
+
 // TestChainMiddleware verifies middleware chaining
 func TestChainMiddleware(t *testing.T) {
 	// Track order of middleware execution
