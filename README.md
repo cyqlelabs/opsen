@@ -14,6 +14,7 @@
 Production-ready load balancer that routes traffic based on real-time CPU, RAM, disk, and GPU availability—not round-robin guesswork. Routes to the best backend based on actual resource metrics, geography, and configurable tier requirements.
 
 **Key Features:**
+
 - 🎯 **Smart Routing** - Resource-aware (CPU, RAM, disk, GPU) + geography-based routing
 - 📦 **Simple Deployment** - Two binaries (server + client), Docker support, YAML config, systemd integration
 - 🛡️ **Production Security** - API keys, IP whitelisting, rate limiting, TLS, request size limits, timeouts
@@ -35,6 +36,7 @@ This automatically detects your platform and installs pre-built binaries to `/us
 ### Docker
 
 **Pre-built images are available** from GitHub Container Registry (no authentication required):
+
 - `ghcr.io/cyqlelabs/opsen-server:latest`
 - `ghcr.io/cyqlelabs/opsen-client:latest`
 
@@ -97,18 +99,21 @@ docker build -f Dockerfile.client -t opsen-client .
 **Environment Variables:**
 
 Server:
+
 - `OPSEN_SERVER_PORT` - Port to listen on (default: 8080)
 - `OPSEN_SERVER_HOST` - Host to bind to (default: 0.0.0.0)
 - `OPSEN_SERVER_DATABASE` - Database path (default: /data/opsen.db)
 - `OPSEN_SERVER_STALE_TIMEOUT` - Client stale timeout in minutes (default: 5)
 
 Client:
+
 - `OPSEN_CLIENT_SERVER_URL` - Load balancer server URL (required)
 - `OPSEN_CLIENT_WINDOW_MINUTES` - Metrics averaging window (default: 15)
 - `OPSEN_CLIENT_INTERVAL_SECONDS` - Report interval (default: 60)
 - `OPSEN_CLIENT_DISK_PATH` - Disk path to monitor (default: /)
 
 For advanced options (TLS, auth, logging, sticky sessions, etc.), mount a config file:
+
 ```bash
 docker run -v ./server.yml:/etc/opsen/config.yml:ro ghcr.io/cyqlelabs/opsen-server:latest
 ```
@@ -116,11 +121,13 @@ docker run -v ./server.yml:/etc/opsen/config.yml:ro ghcr.io/cyqlelabs/opsen-serv
 **GPU Support:**
 
 For GPU monitoring, use NVIDIA Container Runtime:
+
 ```bash
 docker run --gpus all -e OPSEN_CLIENT_SERVER_URL=http://server:8080 ghcr.io/cyqlelabs/opsen-client:latest
 ```
 
 **Image Sizes:**
+
 - Server: ~33MB (Alpine-based)
 - Client: ~100MB (Debian-based, required for GPU support)
 
@@ -244,6 +251,7 @@ Binaries are output to `bin/`:
 The repository includes helpful scripts for common setup tasks:
 
 ### `scripts/download-geoip.sh`
+
 Downloads the MaxMind GeoLite2-City database for geographic routing from Opsen's S3 mirror.
 
 ```bash
@@ -251,6 +259,7 @@ Downloads the MaxMind GeoLite2-City database for geographic routing from Opsen's
 ```
 
 **Note:** The client automatically downloads this database on first run. This script is only needed for:
+
 - Manual server-side GeoIP setup (optional, for routing request geolocation)
 - Updating the database (recommended monthly)
 - Custom installation paths
@@ -258,6 +267,7 @@ Downloads the MaxMind GeoLite2-City database for geographic routing from Opsen's
 Source: `https://cyqle-opsen.s3.us-east-2.amazonaws.com/GeoLite2-City.mmdb` (no authentication required)
 
 ### `scripts/generate-tls-cert.sh`
+
 Generates self-signed TLS certificates with Subject Alternative Names (SANs) for development/testing.
 
 ```bash
@@ -285,6 +295,7 @@ geoip_db_path: ./GeoLite2-City.mmdb
 ```
 
 **When server GeoIP is needed:**
+
 - ✓ Multi-datacenter deployments with routing requests from different regions
 - ✗ Single datacenter (backends already have location via auto-download)
 
@@ -302,44 +313,44 @@ port: 8080
 host: 0.0.0.0
 database: /opt/opsen/opsen.db
 stale_minutes: 5
-log_level: info  # debug, info, warn, error, fatal
+log_level: info # debug, info, warn, error, fatal
 json_logging: false
 
 # Security
-server_key: ""  # Client auth (opsen-client must match)
-api_keys: []  # Additional API keys for other integrations
-whitelisted_ips: []  # CIDR ranges (empty = allow all)
+server_key: "" # Client auth (opsen-client must match)
+api_keys: [] # Additional API keys for other integrations
+whitelisted_ips: [] # CIDR ranges (empty = allow all)
 rate_limit_per_minute: 60
 rate_limit_burst: 120
-max_request_body_bytes: 10485760  # 10MB
+max_request_body_bytes: 10485760 # 10MB
 request_timeout_seconds: 30
-read_header_timeout_seconds: 10  # Slowloris protection
+read_header_timeout_seconds: 10 # Slowloris protection
 
 # TLS
-tls_cert_file: ""  # Empty = HTTP only
+tls_cert_file: "" # Empty = HTTP only
 tls_key_file: ""
-tls_insecure_skip_verify: false  # For self-signed certs (dev only!)
+tls_insecure_skip_verify: false # For self-signed certs (dev only!)
 
 # CORS
 enable_cors: false
 cors_allowed_origins: []
 
 # Reverse Proxy
-proxy_endpoints: []  # e.g., ["/api", "/browse"]
-proxy_sse_flush_interval_ms: -1  # -1=immediate (SSE), 0=disabled, >0=interval
+proxy_endpoints: [] # e.g., ["/api", "/browse"]
+proxy_sse_flush_interval_ms: -1 # -1=immediate (SSE), 0=disabled, >0=interval
 
 # Geolocation
-geoip_db_path: ""  # Path to GeoLite2-City.mmdb
+geoip_db_path: "" # Path to GeoLite2-City.mmdb
 
 # Sticky Sessions
-sticky_header: ""  # e.g., "X-Session-ID", "X-User-ID" (empty = disabled)
-sticky_by_ip: false  # Use client IP when header not present
+sticky_header: "" # e.g., "X-Session-ID", "X-User-ID" (empty = disabled)
+sticky_by_ip: false # Use client IP when header not present
 sticky_affinity_enabled: true
 pending_allocation_timeout_seconds: 120
 
 # Tier Detection
-tier_field_name: "tier"  # JSON body field
-tier_header: "X-Tier"  # HTTP header
+tier_field_name: "tier" # JSON body field
+tier_header: "X-Tier" # HTTP header
 
 # Database
 db_max_open_conns: 25
@@ -358,7 +369,7 @@ tiers:
     vcpu: 2
     memory_gb: 4.0
     storage_gb: 20
-  - name: gpu-inference  # GPU example
+  - name: gpu-inference # GPU example
     vcpu: 8
     memory_gb: 32.0
     storage_gb: 100
@@ -367,6 +378,7 @@ tiers:
 ```
 
 **Run:**
+
 ```bash
 ./bin/opsen-server -config server.yml
 
@@ -381,25 +393,25 @@ Create `client.yml`:
 ```yaml
 # Basic
 server_url: http://lb.example.com:8080
-server_key: ""  # Must match server's server_key (if set)
-endpoint_url: ""  # Override (default: http://{local_ip}:11000)
+server_key: "" # Must match server's server_key (if set)
+endpoint_url: "" # Override (default: http://{local_ip}:11000)
 
 # Metrics
-window_minutes: 15  # Averaging window
+window_minutes: 15 # Averaging window
 report_interval_seconds: 60
 disk_path: /
 
 # Identity
-client_id: ""  # Auto-generated UUID if empty
-hostname: ""  # Uses system hostname if empty
+client_id: "" # Auto-generated UUID if empty
+hostname: "" # Uses system hostname if empty
 
 # Geolocation (auto-downloads GeoIP database on first run)
-skip_geolocation: false  # Skip entirely (fastest)
-geoip_db_path: ""  # Auto-downloads to ./GeoLite2-City.mmdb if not set
+skip_geolocation: false # Skip entirely (fastest)
+geoip_db_path: "" # Auto-downloads to ./GeoLite2-City.mmdb if not set
 
 # Logging & TLS
 log_level: info
-insecure_tls: false  # Dev only - skip cert verification
+insecure_tls: false # Dev only - skip cert verification
 ```
 
 **Important: `endpoint_url` Configuration**
@@ -426,6 +438,7 @@ endpoint_url: http://backend-3.internal:9000
 Each client monitors its own resources and reports to the same load balancer server.
 
 **Run:**
+
 ```bash
 ./bin/opsen-client -config client.yml
 
@@ -438,6 +451,7 @@ Each client monitors its own resources and reports to the same load balancer ser
 All endpoints except `/health` support API key auth (`X-API-Key` header). Rate limited per IP (60/min, burst 120). Security headers included automatically.
 
 ### POST /register
+
 Register backend. Required before stats reporting or routing.
 
 **Request:** `client_id`, `hostname`, `public_ip`, `local_ip`, `latitude`, `longitude`, `country`, `city`, `total_cpu`, `total_memory_gb`, `total_storage_gb`, optional: `total_gpus`, `gpu_models`, `endpoint_url`
@@ -445,13 +459,15 @@ Register backend. Required before stats reporting or routing.
 **Response:** `{"status": "registered"}`
 
 ### POST /stats
+
 Report metrics (every 60s default).
 
-**Request:** `client_id`, `hostname`, `timestamp`, `cpu_cores`, `cpu_usage_avg` (per-core array), `memory_*`, `disk_*`, optional: `gpus[]` (device_id, name, utilization_pct, memory_*, temperature_c, power_draw_w)
+**Request:** `client_id`, `hostname`, `timestamp`, `cpu_cores`, `cpu_usage_avg` (per-core array), `memory_*`, `disk_*`, optional: `gpus[]` (device*id, name, utilization_pct, memory*\*, temperature_c, power_draw_w)
 
 **Response:** `{"status": "ok"}`
 
 ### POST /route
+
 Get routing decision.
 
 **Request:** `tier`, `client_ip`, optional: `client_lat`, `client_lon`
@@ -460,11 +476,13 @@ Get routing decision.
 **Response:** `client_id`, `endpoint`, `hostname`, `distance_km`
 
 ### GET /health
+
 Server health (no auth required).
 
 **Response:** `status`, `timestamp`, `total_clients`, `active_clients`
 
 ### GET /clients
+
 List backends with current metrics.
 
 **Response:** Array of: `client_id`, `hostname`, `endpoint`, `location`, `cpu_*`, `memory_*`, `disk_*`, `gpus[]`, `last_seen`, `is_active`
@@ -477,8 +495,8 @@ The server uses a **weighted scoring algorithm** with sticky session support to 
 
 The load balancer supports session affinity via two methods:
 
-**Header-based stickiness** (`sticky_header`): Uses a custom HTTP header as the sticky identifier
-**IP-based stickiness** (`sticky_by_ip`): Uses client IP address as the sticky identifier
+- **Header-based stickiness** (`sticky_header`): Uses a custom HTTP header as the sticky identifier
+- **IP-based stickiness** (`sticky_by_ip`): Uses client IP address as the sticky identifier
 
 When enabled, the load balancer provides session affinity:
 
@@ -509,8 +527,9 @@ score = distance_km + (avg_cpu_usage_pct * 1.0) + (memory_usage_pct * 1.0) + (gp
 ```
 
 Where:
+
 - `avg_cpu_usage_pct` = Average usage of the **N least-loaded cores** (representing what a new session would experience)
-- `memory_usage_pct` = Total memory usage percentage (used/total * 100)
+- `memory_usage_pct` = Total memory usage percentage (used/total \* 100)
 - `gpu_usage_pct` = Average GPU utilization across all GPUs (if tier requires GPUs)
 - `latency_ms` = Round-trip latency to backend from health checks (EWMA smoothed, 0 if health checks disabled)
 - GPU gets **higher weight (1.5x)** as GPU workloads are more sensitive to resource contention
@@ -544,6 +563,7 @@ Lower scores are better. The algorithm:
 - Duplicate allocations for same `sticky_id + tier` are automatically deduplicated
 
 **CPU Availability Details:**
+
 - A CPU core is considered "available" if its average usage over the time window is <80%
 - For scoring, the algorithm selects the N **least-loaded cores** and averages their usage
 - This represents the actual CPU resources a new session would consume
@@ -593,22 +613,24 @@ After changes: `sudo systemctl daemon-reload`
 Configure paths to proxy, point frontend to load balancer. Zero code changes needed.
 
 **Server:**
+
 ```yaml
-proxy_endpoints: ["/api", "/v1"]  # Or "/*" for all paths
-sticky_header: "X-Session-ID"  # Optional
-proxy_sse_flush_interval_ms: -1  # SSE support: -1=immediate, 0=disabled, >0=interval
+proxy_endpoints: ["/api", "/v1"] # Or "/*" for all paths
+sticky_header: "X-Session-ID" # Optional
+proxy_sse_flush_interval_ms: -1 # SSE support: -1=immediate, 0=disabled, >0=interval
 ```
 
 **Frontend:**
+
 ```javascript
 // Change base URL only - all existing API calls work unchanged
-const API_BASE = "https://lb.example.com:8080";  // Was: https://backend1.example.com
+const API_BASE = "https://lb.example.com:8080"; // Was: https://backend1.example.com
 
 fetch(`${API_BASE}/api/users`, {
   headers: {
-    "X-Session-ID": sessionId,  // Optional: sticky sessions
+    "X-Session-ID": sessionId, // Optional: sticky sessions
   },
-  body: JSON.stringify({ tier: "medium", ...data })  // Tier auto-detected
+  body: JSON.stringify({ tier: "medium", ...data }), // Tier auto-detected
 });
 
 // SSE/streaming works automatically
@@ -616,12 +638,14 @@ const eventSource = new EventSource(`${API_BASE}/events/stream`);
 ```
 
 **Tier Detection (priority order):**
+
 1. JSON body field (`tier_field_name`, default: "tier")
 2. Query parameter (`?tier=medium`)
 3. HTTP header (`tier_header`, default: "X-Tier")
 4. Default: "lite"
 
 Customize field names in server.yml:
+
 ```yaml
 tier_field_name: "subscription_level"
 tier_header: "X-Subscription-Level"
@@ -735,19 +759,20 @@ journalctl -u opsen-client -f
 
 **Benchmarked on AMD Ryzen 9 5900X (24 cores), verified across 5 runs:**
 
-| Metric | Value | Notes |
-|--------|-------|-------|
-| **Server Latency** | 140 ns → 14.8 µs | Scales O(n): 0.14 µs (1 client), 1.5 µs (10 clients), 14.8 µs (100 clients) |
-| **Concurrent Routing** | 3.7 µs | 1000 concurrent requests, 100% success rate (5/5 runs identical) |
-| **Scalability** | 150 clients tested | 1000 requests with 100% success, no race conditions |
-| **Client Overhead** | 0.33% | Combined CPU+RAM+disk+2×GPU at 1 sample/sec (5/5 runs identical) |
-| **Memory (Server)** | ~8 MB | Baseline heap allocation, in-memory routing cache |
-| **Memory (Client)** | ~3-7 MB | Varies by CPU core count and GPU monitoring |
-| **Database** | SQLite + WAL | Off critical path - persistence only, not routing |
+| Metric                 | Value              | Notes                                                                       |
+| ---------------------- | ------------------ | --------------------------------------------------------------------------- |
+| **Server Latency**     | 140 ns → 14.8 µs   | Scales O(n): 0.14 µs (1 client), 1.5 µs (10 clients), 14.8 µs (100 clients) |
+| **Concurrent Routing** | 3.7 µs             | 1000 concurrent requests, 100% success rate (5/5 runs identical)            |
+| **Scalability**        | 150 clients tested | 1000 requests with 100% success, no race conditions                         |
+| **Client Overhead**    | 0.33%              | Combined CPU+RAM+disk+2×GPU at 1 sample/sec (5/5 runs identical)            |
+| **Memory (Server)**    | ~8 MB              | Baseline heap allocation, in-memory routing cache                           |
+| **Memory (Client)**    | ~3-7 MB            | Varies by CPU core count and GPU monitoring                                 |
+| **Database**           | SQLite + WAL       | Off critical path - persistence only, not routing                           |
 
 **All routing decisions are in-memory with no database I/O on the critical path.**
 
 **Reproduce benchmarks:**
+
 ```bash
 # Routing latency benchmarks (no test output)
 go test ./server -bench=BenchmarkRoutingLatency -benchmem -run='^$'
@@ -764,17 +789,19 @@ go test -race ./...
 Active health checks verify backends are reachable and measure latency. Enabled by default.
 
 **Configuration:**
+
 ```yaml
-health_check_enabled: true          # Enable active probes (default: true)
-health_check_type: "tcp"            # "tcp" or "http" (default: tcp)
-health_check_interval_seconds: 10   # Probe interval (default: 10)
-health_check_timeout_seconds: 2     # Probe timeout (default: 2)
-health_check_path: "/health"        # HTTP path (default: /health)
+health_check_enabled: true # Enable active probes (default: true)
+health_check_type: "tcp" # "tcp" or "http" (default: tcp)
+health_check_interval_seconds: 10 # Probe interval (default: 10)
+health_check_timeout_seconds: 2 # Probe timeout (default: 2)
+health_check_path: "/health" # HTTP path (default: /health)
 health_check_unhealthy_threshold: 3 # Failures before unhealthy (default: 3)
-health_check_healthy_threshold: 2   # Successes before healthy (default: 2)
+health_check_healthy_threshold: 2 # Successes before healthy (default: 2)
 ```
 
 **Behavior:**
+
 - **TCP probes** - Verify backend port is accepting connections (fast, lightweight)
 - **HTTP probes** - GET request to `endpoint + health_check_path`, expects 2xx/3xx status
 - **Latency** - Measured on each probe, uses EWMA (exponential weighted moving average) for smoothing
@@ -783,11 +810,13 @@ health_check_healthy_threshold: 2   # Successes before healthy (default: 2)
 - **Status transitions** - `unknown` → `healthy` (after 2 successes) → `unhealthy` (after 3 failures) → `healthy` (recoverable)
 
 **View health status:**
+
 ```bash
 curl http://localhost:8080/clients | jq '.[] | {hostname, health_status, latency_ms}'
 ```
 
 **Example output:**
+
 ```json
 {
   "hostname": "backend-1",
@@ -797,6 +826,7 @@ curl http://localhost:8080/clients | jq '.[] | {hostname, health_status, latency
 ```
 
 **When backend goes down:**
+
 1. Health checks fail (3 consecutive failures)
 2. Status changes to `unhealthy`
 3. Sticky assignments removed automatically
@@ -804,6 +834,7 @@ curl http://localhost:8080/clients | jq '.[] | {hostname, health_status, latency
 5. Requests fail over to healthy backends
 
 **Recovery:**
+
 1. Backend comes back online
 2. Health checks succeed (2 consecutive successes)
 3. Status changes to `healthy`
