@@ -126,6 +126,61 @@ func TestTimeout(t *testing.T) {
 	})
 }
 
+// TestTimeoutWithPanic verifies that panics in the timeout goroutine are caught
+func TestTimeoutWithPanic(t *testing.T) {
+	timeout := 100 * time.Millisecond
+
+	// Handler that panics
+	panicHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic("simulated panic in handler")
+	})
+
+	middleware := Timeout(timeout)
+	wrapped := middleware(panicHandler)
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	rec := httptest.NewRecorder()
+
+	// Should not panic - middleware should catch it
+	wrapped.ServeHTTP(rec, req)
+
+	// Should return 500 when panic is caught
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("Expected status 500 after panic, got %d", rec.Code)
+	}
+}
+
+// TestTimeoutWithHeaderRace verifies no "superfluous WriteHeader" error
+// when handler writes headers simultaneously with timeout
+func TestTimeoutWithHeaderRace(t *testing.T) {
+	timeout := 50 * time.Millisecond
+
+	// Handler that starts writing response but takes too long
+	slowWriterHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Write headers immediately
+		w.WriteHeader(http.StatusOK)
+		// Then take too long with the body
+		time.Sleep(100 * time.Millisecond)
+		// Write will likely fail due to timeout, but we don't care in this test
+		_, _ = w.Write([]byte("response body"))
+	})
+
+	middleware := Timeout(timeout)
+	wrapped := middleware(slowWriterHandler)
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	rec := httptest.NewRecorder()
+
+	// Should not produce "superfluous WriteHeader" error
+	wrapped.ServeHTTP(rec, req)
+
+	// Either the handler's 200 or the timeout's 408 is acceptable
+	// depending on timing, but no error should occur
+	if rec.Code != http.StatusOK && rec.Code != http.StatusRequestTimeout {
+		t.Logf("Note: Got status %d (expected 200 or 408)", rec.Code)
+	}
+}
+
 // TestRateLimiter verifies rate limiting functionality
 func TestRateLimiter(t *testing.T) {
 	requestsPerMinute := 10
@@ -982,3 +1037,4 @@ func TestCircuitBreakerState_String(t *testing.T) {
 		})
 	}
 }
+

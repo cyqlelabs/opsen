@@ -58,6 +58,17 @@ func (tw *timeoutWriter) Write(b []byte) (int, error) {
 	return tw.w.Write(b)
 }
 
+// Flush implements http.Flusher for SSE support
+func (tw *timeoutWriter) Flush() {
+	tw.mu.Lock()
+	defer tw.mu.Unlock()
+	if !tw.timedOut {
+		if flusher, ok := tw.w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+	}
+}
+
 func (tw *timeoutWriter) WriteHeader(code int) {
 	tw.mu.Lock()
 	defer tw.mu.Unlock()
@@ -78,6 +89,15 @@ func (tw *timeoutWriter) setTimedOut() {
 func Timeout(timeout time.Duration) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip timeout for SSE/EventSource connections
+			// Detect by Accept header containing text/event-stream
+			accept := r.Header.Get("Accept")
+			if strings.Contains(accept, "text/event-stream") {
+				// No timeout for SSE connections
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			ctx, cancel := context.WithTimeout(r.Context(), timeout)
 			defer cancel()
 
@@ -85,7 +105,14 @@ func Timeout(timeout time.Duration) func(http.Handler) http.Handler {
 
 			tw := &timeoutWriter{w: w}
 			done := make(chan struct{})
+			panicChan := make(chan interface{}, 1)
+
 			go func() {
+				defer func() {
+					if err := recover(); err != nil {
+						panicChan <- err
+					}
+				}()
 				next.ServeHTTP(tw, r)
 				close(done)
 			}()
@@ -93,9 +120,24 @@ func Timeout(timeout time.Duration) func(http.Handler) http.Handler {
 			select {
 			case <-done:
 				return
+			case err := <-panicChan:
+				stack := debug.Stack()
+				log.Printf("PANIC in timeout goroutine: %v\n%s", err, stack)
+				tw.setTimedOut()
+				// Only write error if handler hasn't already written headers
+				tw.mu.Lock()
+				alreadyWrote := tw.wroteHeader
+				tw.mu.Unlock()
+				if !alreadyWrote {
+					http.Error(w, "Internal server error", http.StatusInternalServerError)
+				}
 			case <-ctx.Done():
 				tw.setTimedOut()
-				if ctx.Err() == context.DeadlineExceeded {
+				// Only write timeout error if handler hasn't already written headers
+				tw.mu.Lock()
+				alreadyWrote := tw.wroteHeader
+				tw.mu.Unlock()
+				if !alreadyWrote && ctx.Err() == context.DeadlineExceeded {
 					http.Error(w, "Request timeout", http.StatusRequestTimeout)
 				}
 			}
@@ -370,6 +412,13 @@ type responseWriter struct {
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+// Flush implements http.Flusher for SSE support
+func (rw *responseWriter) Flush() {
+	if flusher, ok := rw.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }
 
 // ChainMiddleware chains multiple middleware functions

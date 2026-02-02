@@ -288,7 +288,7 @@ func main() {
 		Addr:              addr,
 		Handler:           mux,
 		ReadTimeout:       time.Duration(yamlConfig.RequestTimeout) * time.Second,
-		WriteTimeout:      time.Duration(yamlConfig.RequestTimeout) * time.Second,
+		WriteTimeout:      0, // Disabled for SSE/long-lived connections support
 		IdleTimeout:       120 * time.Second,
 		ReadHeaderTimeout: time.Duration(yamlConfig.ReadHeaderTimeout) * time.Second,
 		MaxHeaderBytes:    1 << 20, // 1MB
@@ -1242,6 +1242,9 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 				InsecureSkipVerify: s.config.TLSInsecureSkipVerify,
 			},
 		},
+		// ModifyResponse: ReverseProxy automatically forwards all headers from backend
+		// We don't need to manually copy them here
+		ModifyResponse: nil,
 		// FlushInterval enables SSE/streaming support
 		// -1 = flush immediately (best for SSE), 0 = no flush, >0 = flush at interval
 		FlushInterval: time.Duration(s.config.ProxySSEFlushInterval) * time.Millisecond,
