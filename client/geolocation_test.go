@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// TestGetGeolocationFromDB_InvalidIP verifies handling of invalid IP addresses
-func TestGetGeolocationFromDB_InvalidIP(t *testing.T) {
+// TestGetGeolocationFromIP_InvalidIP verifies handling of invalid IP addresses
+func TestGetGeolocationFromIP_InvalidIP(t *testing.T) {
 	collector := &MetricsCollector{
 		config: Config{
 			GeoIPDBPath: "/nonexistent/path.mmdb",
@@ -17,14 +17,14 @@ func TestGetGeolocationFromDB_InvalidIP(t *testing.T) {
 		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
 
-	_, err := collector.getGeolocationFromDB("not-an-ip")
+	_, err := collector.getGeolocationFromIP("/nonexistent/path.mmdb", "not-an-ip")
 	if err == nil {
 		t.Error("Expected error for invalid IP address")
 	}
 }
 
-// TestGetGeolocationFromDB_InvalidDBPath verifies handling of invalid database path
-func TestGetGeolocationFromDB_InvalidDBPath(t *testing.T) {
+// TestGetGeolocationFromIP_InvalidDBPath verifies handling of invalid database path
+func TestGetGeolocationFromIP_InvalidDBPath(t *testing.T) {
 	collector := &MetricsCollector{
 		config: Config{
 			GeoIPDBPath: "/nonexistent/path/to/database.mmdb",
@@ -32,34 +32,9 @@ func TestGetGeolocationFromDB_InvalidDBPath(t *testing.T) {
 		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
 
-	_, err := collector.getGeolocationFromDB("8.8.8.8")
+	_, err := collector.getGeolocationFromIP("/nonexistent/path/to/database.mmdb", "8.8.8.8")
 	if err == nil {
 		t.Error("Expected error for nonexistent database")
-	}
-}
-
-// TestGetPublicIP_HTTPError verifies handling of HTTP errors
-func TestGetPublicIP_HTTPError(t *testing.T) {
-	// Create mock server that returns error status
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusServiceUnavailable)
-	}))
-
-	collector := &MetricsCollector{
-		httpClient: &http.Client{Timeout: 1 * time.Second},
-	}
-
-	// Close server after creating collector to ensure error
-	server.Close()
-	_, err := collector.getPublicIP()
-
-	// This test verifies error handling - getPublicIP() should return an error
-	// when the server is unreachable, but in practice the API call might succeed
-	// if it actually reaches ipify.org instead of the mock server
-	if err != nil {
-		t.Logf("Got expected error when server unavailable: %v", err)
-	} else {
-		t.Skip("Test skipped - real ipify.org API was reached instead of mock server")
 	}
 }
 

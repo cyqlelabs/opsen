@@ -34,6 +34,7 @@ type Server struct {
 	stickyAssignments     map[string]map[string]string // sticky_id → (tier → client_id)
 	pendingAllocations    map[string][]PendingAllocation // client_id → pending allocations
 	stickyHeader          string                        // Header name to use for stickiness
+	stickyByIP            bool                          // Use client IP for stickiness when header is not present
 	stickyAffinityEnabled bool                          // Whether to prefer same server across tiers
 	staleTimeout          time.Duration
 	cleanupInterval       time.Duration
@@ -131,6 +132,7 @@ func main() {
 		stickyAssignments:     make(map[string]map[string]string),
 		pendingAllocations:    make(map[string][]PendingAllocation),
 		stickyHeader:          yamlConfig.StickyHeader,
+		stickyByIP:            yamlConfig.StickyByIP,
 		stickyAffinityEnabled: yamlConfig.StickyAffinityEnabled,
 		staleTimeout:          time.Duration(yamlConfig.StaleMinutes) * time.Minute,
 		cleanupInterval:       time.Duration(yamlConfig.CleanupIntervalSecs) * time.Second,
@@ -152,9 +154,11 @@ func main() {
 	}
 
 	// Log sticky session configuration
+	stickyEnabled := yamlConfig.StickyHeader != "" || yamlConfig.StickyByIP
 	LogInfoWithData("Sticky session configuration", map[string]interface{}{
-		"enabled":          yamlConfig.StickyHeader != "",
+		"enabled":          stickyEnabled,
 		"header":           yamlConfig.StickyHeader,
+		"by_ip":            yamlConfig.StickyByIP,
 		"affinity_enabled": yamlConfig.StickyAffinityEnabled,
 	})
 
@@ -164,7 +168,7 @@ func main() {
 	}
 
 	// Load sticky assignments if sticky sessions enabled
-	if yamlConfig.StickyHeader != "" {
+	if stickyEnabled {
 		if err := server.loadStickyAssignments(); err != nil {
 			LogWarn(fmt.Sprintf("Failed to load sticky assignments: %v", err))
 		}
@@ -609,10 +613,14 @@ func (s *Server) handleRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract sticky ID from configured header
+	// Extract sticky ID from configured header or client IP
 	stickyID := ""
 	if s.stickyHeader != "" {
 		stickyID = r.Header.Get(s.stickyHeader)
+	}
+	// If no header value and sticky_by_ip enabled, use client IP
+	if stickyID == "" && s.stickyByIP {
+		stickyID = getClientIP(r)
 	}
 
 	// Resolve client coordinates
@@ -1136,10 +1144,14 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	// Extract sticky ID from configured header
+	// Extract sticky ID from configured header or client IP
 	stickyID := ""
 	if s.stickyHeader != "" {
 		stickyID = r.Header.Get(s.stickyHeader)
+	}
+	// If no header value and sticky_by_ip enabled, use client IP
+	if stickyID == "" && s.stickyByIP {
+		stickyID = getClientIP(r)
 	}
 
 	// Extract routing parameters from JSON body (if provided)
@@ -1345,11 +1357,12 @@ func (s *Server) loadStickyAssignments() error {
 
 // selectClientWithStickiness implements sticky routing logic with fallback
 // Includes resource reservation to prevent race conditions with concurrent requests
+// Sticky ID can come from a header (stickyHeader) or client IP (stickyByIP)
 func (s *Server) selectClientWithStickiness(stickyID, tier string, tierSpec common.TierSpec,
 	clientLat, clientLon float64, requestID string) *ClientState {
 
-	// If no sticky header configured or no sticky ID provided, use standard routing
-	if s.stickyHeader == "" || stickyID == "" {
+	// If no sticky sessions configured or no sticky ID provided, use standard routing
+	if (s.stickyHeader == "" && !s.stickyByIP) || stickyID == "" {
 		client := s.findBestClient(tierSpec, clientLat, clientLon)
 		if client != nil {
 			// Reserve resources even for non-sticky requests to prevent race conditions

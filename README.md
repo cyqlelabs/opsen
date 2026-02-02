@@ -18,7 +18,7 @@ Production-ready load balancer that routes traffic based on real-time CPU, RAM, 
 - 📦 **Simple Deployment** - Two binaries (server + client), Docker support, YAML config, systemd integration
 - 🛡️ **Production Security** - API keys, IP whitelisting, rate limiting, TLS, request size limits, timeouts
 - 🔄 **High Reliability** - Circuit breaker, exponential backoff, panic recovery, graceful shutdown
-- 🎯 **Sticky Sessions** - Configurable session affinity via custom headers
+- 🎯 **Sticky Sessions** - Configurable session affinity via custom headers or client IP
 - 🚀 **Built-in Reverse Proxy** - SSE/streaming support, automatic tier detection, path preservation
 - ⚡ **Performance** - <15µs routing (100 backends), in-memory decisions, connection pooling
 
@@ -332,7 +332,8 @@ proxy_sse_flush_interval_ms: -1  # -1=immediate (SSE), 0=disabled, >0=interval
 geoip_db_path: ""  # Path to GeoLite2-City.mmdb
 
 # Sticky Sessions
-sticky_header: ""  # e.g., "X-Session-ID", "X-User-ID"
+sticky_header: ""  # e.g., "X-Session-ID", "X-User-ID" (empty = disabled)
+sticky_by_ip: false  # Use client IP when header not present
 sticky_affinity_enabled: true
 pending_allocation_timeout_seconds: 120
 
@@ -474,18 +475,30 @@ The server uses a **weighted scoring algorithm** with sticky session support to 
 
 ### Sticky Sessions (Optional)
 
-When `sticky_header` is configured (e.g., `"X-Session-ID"`), the load balancer provides session affinity:
+The load balancer supports session affinity via two methods:
+
+**Header-based stickiness** (`sticky_header`): Uses a custom HTTP header as the sticky identifier
+**IP-based stickiness** (`sticky_by_ip`): Uses client IP address as the sticky identifier
+
+When enabled, the load balancer provides session affinity:
 
 1. **First request**: Standard routing algorithm selects best server, creates assignment `(sticky_id, tier) → server`
 2. **Subsequent requests**: Same `sticky_id + tier` always routes to the assigned server (if healthy)
 3. **Affinity mode** (`sticky_affinity_enabled: true`): Different tiers from same `sticky_id` prefer the same server
 4. **Automatic fallback**: If assigned server is unavailable or overloaded, selects a new server
 
+**Configuration options:**
+
+- `sticky_header: "X-Session-ID"` + `sticky_by_ip: false` - Header-based only (authenticated users)
+- `sticky_header: ""` + `sticky_by_ip: true` - IP-based only (anonymous users, no session tracking)
+- Both enabled - Header takes precedence; IP used as fallback when header not present
+
 **Use cases:**
 
 - `X-Session-ID`: Per-session stickiness (different sessions can go to different servers)
 - `X-User-ID`: All sessions from same user prefer same server (when affinity enabled)
 - `X-Device-ID`: All sessions from same device prefer same server
+- IP-based: Anonymous users without session IDs (e.g., public APIs, CDN origins)
 
 ### Standard Routing (No Sticky Header)
 

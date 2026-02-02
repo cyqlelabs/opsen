@@ -10,46 +10,8 @@ import (
 	"time"
 )
 
-// TestGetPublicIP_Integration verifies public IP retrieval integration
-func TestGetPublicIP_Integration(t *testing.T) {
-	collector := &MetricsCollector{
-		httpClient: &http.Client{Timeout: 5 * time.Second},
-	}
-
-	ip, err := collector.getPublicIP()
-	if err != nil {
-		t.Logf("Failed to get public IP (may be offline): %v", err)
-		return
-	}
-
-	if ip == "" {
-		t.Error("Expected non-empty IP address")
-	}
-
-	// Basic validation
-	if len(ip) < 7 {
-		t.Errorf("IP address seems invalid: %s", ip)
-	}
-
-	t.Logf("Public IP: %s", ip)
-}
-
-// TestGetPublicIP_NetworkError verifies network error handling
-func TestGetPublicIP_NetworkError(t *testing.T) {
-	// Test with invalid URL by using short timeout
-	collector := &MetricsCollector{
-		httpClient: &http.Client{Timeout: 1 * time.Millisecond}, // Very short timeout
-	}
-
-	_, err := collector.getPublicIP()
-	// Might succeed if very fast, or timeout
-	if err != nil {
-		t.Logf("Expected error with short timeout: %v", err)
-	}
-}
-
-// TestGetGeolocationFromDB_Success verifies GeoIP database lookup
-func TestGetGeolocationFromDB_Success(t *testing.T) {
+// TestGetGeolocationFromIP_Success verifies GeoIP database lookup
+func TestGetGeolocationFromIP_Success(t *testing.T) {
 	// Skip if no GeoIP database available
 	dbPath := os.Getenv("GEOIP_DB_PATH")
 	if dbPath == "" {
@@ -68,7 +30,7 @@ func TestGetGeolocationFromDB_Success(t *testing.T) {
 	}
 
 	// Test with Google DNS IP
-	result, err := collector.getGeolocationFromDB("8.8.8.8")
+	result, err := collector.getGeolocationFromIP(dbPath, "8.8.8.8")
 	if err != nil {
 		t.Fatalf("Failed to lookup IP in GeoIP database: %v", err)
 	}
@@ -90,8 +52,8 @@ func TestGetGeolocationFromDB_Success(t *testing.T) {
 	t.Logf("GeoIP result: %+v", result)
 }
 
-// TestGetGeolocationFromDB_PrivateIP verifies handling of private IP addresses
-func TestGetGeolocationFromDB_PrivateIP(t *testing.T) {
+// TestGetGeolocationFromIP_PrivateIP verifies handling of private IP addresses
+func TestGetGeolocationFromIP_PrivateIP(t *testing.T) {
 	// Skip if no GeoIP database available
 	dbPath := os.Getenv("GEOIP_DB_PATH")
 	if dbPath == "" {
@@ -110,7 +72,7 @@ func TestGetGeolocationFromDB_PrivateIP(t *testing.T) {
 	}
 
 	// Test with private IP (should fail or return no data)
-	_, err := collector.getGeolocationFromDB("192.168.1.1")
+	_, err := collector.getGeolocationFromIP(dbPath, "192.168.1.1")
 	if err != nil {
 		t.Logf("Private IP lookup failed (expected): %v", err)
 	} else {
@@ -118,8 +80,8 @@ func TestGetGeolocationFromDB_PrivateIP(t *testing.T) {
 	}
 }
 
-// TestGetGeolocationFromDB_CityDataHandling verifies city data handling
-func TestGetGeolocationFromDB_CityDataHandling(t *testing.T) {
+// TestGetGeolocationFromIP_CityDataHandling verifies city data handling
+func TestGetGeolocationFromIP_CityDataHandling(t *testing.T) {
 	// Skip if no GeoIP database available
 	dbPath := os.Getenv("GEOIP_DB_PATH")
 	if dbPath == "" {
@@ -138,7 +100,7 @@ func TestGetGeolocationFromDB_CityDataHandling(t *testing.T) {
 	}
 
 	// Some IPs might not have city data
-	result, err := collector.getGeolocationFromDB("8.8.8.8")
+	result, err := collector.getGeolocationFromIP(dbPath, "8.8.8.8")
 	if err != nil {
 		t.Fatalf("Failed to lookup IP: %v", err)
 	}
@@ -152,8 +114,8 @@ func TestGetGeolocationFromDB_CityDataHandling(t *testing.T) {
 	}
 }
 
-// TestGetGeolocationFromDB_DatabaseNotFound verifies error handling for missing database
-func TestGetGeolocationFromDB_DatabaseNotFound(t *testing.T) {
+// TestGetGeolocationFromIP_DatabaseNotFound verifies error handling for missing database
+func TestGetGeolocationFromIP_DatabaseNotFound(t *testing.T) {
 	collector := &MetricsCollector{
 		config: Config{
 			GeoIPDBPath: "/nonexistent/path/to/GeoLite2-City.mmdb",
@@ -161,7 +123,7 @@ func TestGetGeolocationFromDB_DatabaseNotFound(t *testing.T) {
 		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
 
-	_, err := collector.getGeolocationFromDB("8.8.8.8")
+	_, err := collector.getGeolocationFromIP("/nonexistent/path/to/GeoLite2-City.mmdb", "8.8.8.8")
 	if err == nil {
 		t.Error("Expected error for nonexistent database")
 	}
@@ -171,8 +133,8 @@ func TestGetGeolocationFromDB_DatabaseNotFound(t *testing.T) {
 	}
 }
 
-// TestGetGeolocationFromDB_MultipleIPs verifies multiple IP lookups
-func TestGetGeolocationFromDB_MultipleIPs(t *testing.T) {
+// TestGetGeolocationFromIP_MultipleIPs verifies multiple IP lookups
+func TestGetGeolocationFromIP_MultipleIPs(t *testing.T) {
 	// Skip if no GeoIP database available
 	dbPath := os.Getenv("GEOIP_DB_PATH")
 	if dbPath == "" {
@@ -191,13 +153,13 @@ func TestGetGeolocationFromDB_MultipleIPs(t *testing.T) {
 	}
 
 	testIPs := []string{
-		"8.8.8.8",      // Google DNS (US)
-		"1.1.1.1",      // Cloudflare DNS (US)
+		"8.8.8.8",        // Google DNS (US)
+		"1.1.1.1",        // Cloudflare DNS (US)
 		"208.67.222.222", // OpenDNS (US)
 	}
 
 	for _, ip := range testIPs {
-		result, err := collector.getGeolocationFromDB(ip)
+		result, err := collector.getGeolocationFromIP(dbPath, ip)
 		if err != nil {
 			t.Logf("Failed to lookup %s: %v", ip, err)
 			continue
@@ -398,8 +360,8 @@ func TestRegister_LocalIPFailure(t *testing.T) {
 	}
 }
 
-// TestGetGeolocationFromDB_CloseDatabase verifies database is properly closed
-func TestGetGeolocationFromDB_CloseDatabase(t *testing.T) {
+// TestGetGeolocationFromIP_CloseDatabase verifies database is properly closed
+func TestGetGeolocationFromIP_CloseDatabase(t *testing.T) {
 	// Skip if no GeoIP database available
 	dbPath := os.Getenv("GEOIP_DB_PATH")
 	if dbPath == "" {
@@ -419,7 +381,7 @@ func TestGetGeolocationFromDB_CloseDatabase(t *testing.T) {
 
 	// Multiple calls should each open and close the database
 	for i := 0; i < 3; i++ {
-		_, err := collector.getGeolocationFromDB("8.8.8.8")
+		_, err := collector.getGeolocationFromIP(dbPath, "8.8.8.8")
 		if err != nil {
 			t.Fatalf("Lookup %d failed: %v", i+1, err)
 		}
@@ -428,8 +390,8 @@ func TestGetGeolocationFromDB_CloseDatabase(t *testing.T) {
 	t.Log("Database opened and closed multiple times successfully")
 }
 
-// TestGetGeolocationFromDB_RelativePath verifies handling of relative paths
-func TestGetGeolocationFromDB_RelativePath(t *testing.T) {
+// TestGetGeolocationFromIP_RelativePath verifies handling of relative paths
+func TestGetGeolocationFromIP_RelativePath(t *testing.T) {
 	// Create a temporary directory
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "test.mmdb")
@@ -442,7 +404,7 @@ func TestGetGeolocationFromDB_RelativePath(t *testing.T) {
 	}
 
 	// Should fail because file doesn't exist
-	_, err := collector.getGeolocationFromDB("8.8.8.8")
+	_, err := collector.getGeolocationFromIP(dbPath, "8.8.8.8")
 	if err == nil {
 		t.Error("Expected error for nonexistent database file")
 	}

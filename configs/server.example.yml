@@ -82,20 +82,33 @@ proxy_endpoints:
 # geoip_db_path: ./GeoLite2-City.mmdb
 
 # Sticky session configuration
-# Enables session affinity based on a custom HTTP header
-# When a request includes the configured header, the same backend will be used for that header value + tier combination
+# Enables session affinity based on a custom HTTP header or client IP address
+# When a request includes the configured header or uses IP-based stickiness, the same backend will be used for that identifier + tier combination
 #
 # sticky_header: Header name to extract sticky ID from (e.g., "X-Session-ID", "X-User-ID", "X-Device-ID")
-#                Leave empty to disable sticky sessions
+#                Leave empty to disable header-based sticky sessions
+# sticky_by_ip: When true, use client IP address for sticky sessions (when header is not present or not configured)
+#               Useful for anonymous users or when session headers are not available
+#               Header-based stickiness takes precedence if both are enabled
 # sticky_affinity_enabled: When true, prefer to assign different tiers from the same sticky_id to the same server
 #                          When false, each tier is independently routed to the best available server
 #
-# Example use cases:
-#   - X-Session-ID: Different sessions from same user can go to different servers
-#   - X-User-ID: All sessions from same user prefer same server (when sticky_affinity_enabled=true)
-#   - X-Device-ID: All sessions from same device prefer same server
+# Example configurations:
+#   1. Header-based only (authenticated users):
+#      sticky_header: "X-Session-ID"
+#      sticky_by_ip: false
+#
+#   2. IP-based only (anonymous users):
+#      sticky_header: ""
+#      sticky_by_ip: true
+#
+#   3. Both (header takes precedence, IP as fallback):
+#      sticky_header: "X-Session-ID"
+#      sticky_by_ip: true
+#      # Authenticated users use session ID, anonymous users use IP
 #
 # sticky_header: "X-Session-ID"
+# sticky_by_ip: false
 # sticky_affinity_enabled: true
 
 # Pending allocation timeout (seconds)

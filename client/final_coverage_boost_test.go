@@ -238,8 +238,8 @@ func TestCircuitBreaker_FullStateFlow(t *testing.T) {
 	}
 }
 
-// TestGetGeolocationFromDB_PathHandling verifies DB path handling
-func TestGetGeolocationFromDB_PathHandling(t *testing.T) {
+// TestGetGeolocationFromIP_PathHandling verifies DB path handling
+func TestGetGeolocationFromIP_PathHandling(t *testing.T) {
 	config := Config{
 		GeoIPDBPath: "",
 	}
@@ -250,7 +250,7 @@ func TestGetGeolocationFromDB_PathHandling(t *testing.T) {
 	}
 
 	// Empty path should fail gracefully
-	_, err := collector.getGeolocationFromDB("8.8.8.8")
+	_, err := collector.getGeolocationFromIP("", "8.8.8.8")
 	if err == nil {
 		t.Log("Empty GeoIP DB path handled (may succeed if default path exists)")
 	}

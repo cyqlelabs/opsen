@@ -327,23 +327,19 @@ func TestGetLocalIP_ErrorHandling(t *testing.T) {
 	}
 }
 
-// TestGetPublicIP_RealCall tests public IP detection with real API call
-func TestGetPublicIP_RealCall(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping real network call in short mode")
-	}
-
+// TestGetLocalIP_Integration tests local IP detection
+func TestGetLocalIP_Integration(t *testing.T) {
 	collector := &MetricsCollector{
 		config:     Config{},
 		httpClient: &http.Client{Timeout: 5 * time.Second},
 	}
 
-	ip, err := collector.getPublicIP()
+	ip, err := collector.getLocalIP()
 
 	if err != nil {
-		t.Logf("getPublicIP returned error (network issue): %v", err)
+		t.Logf("getLocalIP returned error: %v", err)
 	} else {
-		t.Logf("getPublicIP returned: %s", ip)
+		t.Logf("getLocalIP returned: %s", ip)
 		if ip == "" {
 			t.Error("Expected non-empty IP address on success")
 		}
@@ -366,7 +362,7 @@ func TestDownloadGeoIPDatabase_RealDownload(t *testing.T) {
 
 	err := collector.downloadGeoIPDatabase(targetPath)
 	if err != nil {
-		t.Fatalf("Download failed: %v", err)
+		t.Skipf("Download failed (network issue, skipping test): %v", err)
 	}
 
 	// Verify file was created
@@ -434,22 +430,18 @@ func TestGetGeolocationFromDB_WithRealDB(t *testing.T) {
 		t.Skipf("Cannot download database for test: %v", err)
 	}
 
-	// Override getPublicIP to return a known IP for testing
-	// We can't easily mock this, so we'll test the error paths instead
-	geo, err := collector.getGeolocationFromDB(dbPath)
+	// Test with a known public IP
+	testIP := "8.8.8.8" // Google DNS
+	geo, err := collector.getGeolocationFromIP(dbPath, testIP)
 
 	if err != nil {
-		// If getPublicIP fails or returns "unknown", we expect an error
-		t.Logf("getGeolocationFromDB returned error (expected if no public IP): %v", err)
+		t.Logf("getGeolocationFromIP returned error: %v", err)
 	} else {
 		// Success - verify structure
-		if geo["ip"] == nil {
-			t.Error("Expected IP in geolocation result")
-		}
 		if geo["latitude"] == nil || geo["longitude"] == nil {
 			t.Error("Expected coordinates in geolocation result")
 		}
-		t.Logf("Geolocation result: %+v", geo)
+		t.Logf("Geolocation result for %s: %+v", testIP, geo)
 	}
 }
 
@@ -540,7 +532,7 @@ func TestGetGeolocationFromDB_ErrorPaths(t *testing.T) {
 				httpClient: &http.Client{Timeout: 5 * time.Second},
 			}
 
-			_, err := collector.getGeolocationFromDB(tt.dbPath)
+			_, err := collector.getGeolocationFromIP(tt.dbPath, "8.8.8.8")
 			if err == nil {
 				t.Error("Expected error for invalid database path, got nil")
 			}

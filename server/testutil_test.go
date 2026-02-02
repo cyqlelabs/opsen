@@ -92,6 +92,7 @@ func NewTestServerWithConfig(t *testing.T, db *sql.DB, configModifier func(*comm
 		stickyAssignments:     make(map[string]map[string]string),
 		pendingAllocations:    make(map[string][]PendingAllocation),
 		stickyHeader:          config.StickyHeader,
+		stickyByIP:            config.StickyByIP,
 		stickyAffinityEnabled: config.StickyAffinityEnabled,
 		staleTimeout:          time.Duration(config.StaleMinutes) * time.Minute,
 		cleanupInterval:       time.Duration(config.CleanupIntervalSecs) * time.Second,

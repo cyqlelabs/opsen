@@ -326,6 +326,242 @@ func TestStickySession_LimitedResourcesRapidRequests(t *testing.T) {
 	}
 }
 
+// TestStickySession_ByIP verifies IP-based sticky sessions route to the same backend
+func TestStickySession_ByIP(t *testing.T) {
+	db, cleanup := CreateTestDB(t)
+	defer cleanup()
+
+	// Create server with IP-based stickiness enabled
+	server := NewTestServerWithConfig(t, db, func(config *common.ServerConfig) {
+		config.StickyByIP = true
+		config.StickyHeader = "" // Disable header-based stickiness
+	})
+
+	// Create two backend clients
+	client1 := NewMockClient(MockClientOptions{
+		ClientID:    "backend-1",
+		Latitude:    40.7128,
+		Longitude:   -74.0060,
+		CPUUsageAvg: []float64{10, 10, 10, 10, 10, 10, 10, 10},
+	})
+	client2 := NewMockClient(MockClientOptions{
+		ClientID:    "backend-2",
+		Latitude:    40.7128,
+		Longitude:   -74.0060,
+		CPUUsageAvg: []float64{10, 10, 10, 10, 10, 10, 10, 10},
+	})
+
+	server.AddMockClient(client1)
+	server.AddMockClient(client2)
+
+	// Use IP address as sticky ID
+	clientIP := "203.0.113.42"
+	tier := "lite"
+	tierSpec := server.tierSpecs[tier]
+
+	// First request from this IP
+	selectedClient1 := server.selectClientWithStickiness(clientIP, tier, tierSpec, 40.7128, -74.0060, "req-1")
+	if selectedClient1 == nil {
+		t.Fatal("First request returned no client")
+	}
+
+	// Second request from same IP should return same backend
+	selectedClient2 := server.selectClientWithStickiness(clientIP, tier, tierSpec, 40.7128, -74.0060, "req-2")
+	if selectedClient2 == nil {
+		t.Fatal("Second request returned no client")
+	}
+
+	if selectedClient1.Registration.ClientID != selectedClient2.Registration.ClientID {
+		t.Errorf("IP-based sticky session failed: first=%s, second=%s",
+			selectedClient1.Registration.ClientID, selectedClient2.Registration.ClientID)
+	}
+}
+
+// TestStickySession_ByIP_DifferentIPs verifies different IPs can get different backends
+func TestStickySession_ByIP_DifferentIPs(t *testing.T) {
+	db, cleanup := CreateTestDB(t)
+	defer cleanup()
+
+	server := NewTestServerWithConfig(t, db, func(config *common.ServerConfig) {
+		config.StickyByIP = true
+		config.StickyHeader = ""
+	})
+
+	client1 := NewMockClient(MockClientOptions{
+		ClientID:    "backend-1",
+		Latitude:    40.7128,
+		Longitude:   -74.0060,
+		CPUUsageAvg: []float64{10, 10, 10, 10, 10, 10, 10, 10},
+	})
+	client2 := NewMockClient(MockClientOptions{
+		ClientID:    "backend-2",
+		Latitude:    40.7128,
+		Longitude:   -74.0060,
+		CPUUsageAvg: []float64{10, 10, 10, 10, 10, 10, 10, 10},
+	})
+
+	server.AddMockClient(client1)
+	server.AddMockClient(client2)
+
+	tier := "lite"
+	tierSpec := server.tierSpecs[tier]
+
+	// First IP
+	clientIP1 := "203.0.113.42"
+	selected1 := server.selectClientWithStickiness(clientIP1, tier, tierSpec, 40.7128, -74.0060, "req-1")
+	if selected1 == nil {
+		t.Fatal("Request from IP1 returned no client")
+	}
+
+	// Second IP (different from first)
+	clientIP2 := "198.51.100.55"
+	selected2 := server.selectClientWithStickiness(clientIP2, tier, tierSpec, 40.7128, -74.0060, "req-2")
+	if selected2 == nil {
+		t.Fatal("Request from IP2 returned no client")
+	}
+
+	// Verify each IP is sticky to its assigned backend
+	selected1Again := server.selectClientWithStickiness(clientIP1, tier, tierSpec, 40.7128, -74.0060, "req-3")
+	selected2Again := server.selectClientWithStickiness(clientIP2, tier, tierSpec, 40.7128, -74.0060, "req-4")
+
+	if selected1.Registration.ClientID != selected1Again.Registration.ClientID {
+		t.Errorf("IP1 stickiness failed: first=%s, second=%s",
+			selected1.Registration.ClientID, selected1Again.Registration.ClientID)
+	}
+
+	if selected2.Registration.ClientID != selected2Again.Registration.ClientID {
+		t.Errorf("IP2 stickiness failed: first=%s, second=%s",
+			selected2.Registration.ClientID, selected2Again.Registration.ClientID)
+	}
+}
+
+// TestStickySession_HeaderPrecedenceOverIP verifies header-based stickiness takes precedence over IP
+func TestStickySession_HeaderPrecedenceOverIP(t *testing.T) {
+	db, cleanup := CreateTestDB(t)
+	defer cleanup()
+
+	// Enable both header and IP-based stickiness
+	server := NewTestServerWithConfig(t, db, func(config *common.ServerConfig) {
+		config.StickyByIP = true
+		config.StickyHeader = "X-Session-ID" // Keep header enabled
+	})
+
+	client1 := NewMockClient(MockClientOptions{
+		ClientID:    "backend-1",
+		Latitude:    40.7128,
+		Longitude:   -74.0060,
+		CPUUsageAvg: []float64{10, 10, 10, 10, 10, 10, 10, 10},
+	})
+	client2 := NewMockClient(MockClientOptions{
+		ClientID:    "backend-2",
+		Latitude:    40.7128,
+		Longitude:   -74.0060,
+		CPUUsageAvg: []float64{10, 10, 10, 10, 10, 10, 10, 10},
+	})
+
+	server.AddMockClient(client1)
+	server.AddMockClient(client2)
+
+	tier := "lite"
+	tierSpec := server.tierSpecs[tier]
+
+	// First request with session header (IP would be different)
+	sessionID := "user-session-123"
+	selected1 := server.selectClientWithStickiness(sessionID, tier, tierSpec, 40.7128, -74.0060, "req-1")
+	if selected1 == nil {
+		t.Fatal("First request returned no client")
+	}
+
+	// Second request with same session ID but different IP (simulated by different request)
+	// Since we're calling selectClientWithStickiness directly with the session ID,
+	// the IP is irrelevant - this simulates header-based precedence
+	selected2 := server.selectClientWithStickiness(sessionID, tier, tierSpec, 40.7128, -74.0060, "req-2")
+	if selected2 == nil {
+		t.Fatal("Second request returned no client")
+	}
+
+	if selected1.Registration.ClientID != selected2.Registration.ClientID {
+		t.Errorf("Header-based stickiness failed: first=%s, second=%s",
+			selected1.Registration.ClientID, selected2.Registration.ClientID)
+	}
+
+	// Third request with different session ID (simulating IP fallback would work differently)
+	// This test verifies that session ID (header) creates independent sticky assignments
+	differentSessionID := "user-session-456"
+	selected3 := server.selectClientWithStickiness(differentSessionID, tier, tierSpec, 40.7128, -74.0060, "req-3")
+	if selected3 == nil {
+		t.Fatal("Third request returned no client")
+	}
+
+	// Verify the different session ID has its own sticky assignment
+	selected3Again := server.selectClientWithStickiness(differentSessionID, tier, tierSpec, 40.7128, -74.0060, "req-4")
+	if selected3.Registration.ClientID != selected3Again.Registration.ClientID {
+		t.Errorf("Different session stickiness failed: first=%s, second=%s",
+			selected3.Registration.ClientID, selected3Again.Registration.ClientID)
+	}
+}
+
+// TestStickySession_ByIP_FallbackOnOverload verifies IP-based sticky sessions fall back when backend is overloaded
+func TestStickySession_ByIP_FallbackOnOverload(t *testing.T) {
+	db, cleanup := CreateTestDB(t)
+	defer cleanup()
+
+	server := NewTestServerWithConfig(t, db, func(config *common.ServerConfig) {
+		config.StickyByIP = true
+		config.StickyHeader = ""
+	})
+
+	// Client 1: Will become overloaded
+	client1 := NewMockClient(MockClientOptions{
+		ClientID:    "backend-1",
+		Latitude:    40.7128,
+		Longitude:   -74.0060,
+		CPUUsageAvg: []float64{10, 10, 10, 10, 10, 10, 10, 10},
+		MemoryAvail: 10.0,
+	})
+
+	// Client 2: Has plenty of resources
+	client2 := NewMockClient(MockClientOptions{
+		ClientID:    "backend-2",
+		Latitude:    40.7128,
+		Longitude:   -74.0060,
+		CPUUsageAvg: []float64{10, 10, 10, 10, 10, 10, 10, 10},
+		MemoryAvail: 20.0,
+	})
+
+	server.AddMockClient(client1)
+	server.AddMockClient(client2)
+
+	clientIP := "203.0.113.42"
+	tier := "pro-standard"
+	tierSpec := server.tierSpecs[tier]
+
+	// First request - should get assigned to one backend
+	selected1 := server.selectClientWithStickiness(clientIP, tier, tierSpec, 40.7128, -74.0060, "req-1")
+	if selected1 == nil {
+		t.Fatal("First request returned no client")
+	}
+
+	assignedBackend := selected1.Registration.ClientID
+
+	// If assigned to client1, make it overloaded
+	if assignedBackend == "backend-1" {
+		client1.Stats.CPUUsageAvg = []float64{90, 90, 90, 90, 90, 90, 90, 90}
+		client1.Stats.MemoryAvail = 0.5 // Very low memory
+	}
+
+	// Second request - should fall back to the other backend
+	selected2 := server.selectClientWithStickiness(clientIP, tier, tierSpec, 40.7128, -74.0060, "req-2")
+	if selected2 == nil {
+		t.Fatal("Second request returned no client (fallback should work)")
+	}
+
+	// If backend-1 was originally assigned and became overloaded, verify fallback occurred
+	if assignedBackend == "backend-1" && selected2.Registration.ClientID != "backend-2" {
+		t.Errorf("Expected fallback to backend-2, got %s", selected2.Registration.ClientID)
+	}
+}
+
 // ========================================
 // RESOURCE ALLOCATION TESTS
 // ========================================

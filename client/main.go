@@ -244,30 +244,26 @@ func (c *MetricsCollector) register() error {
 			}
 		}
 
-		// Try GeoIP database lookup
+		// Try GeoIP database lookup using local IP
 		if _, err := os.Stat(geoIPPath); err == nil {
 			log.Printf("Using GeoIP database: %s", geoIPPath)
+			log.Printf("Note: Geolocation uses local IP. For accurate location behind NAT, configure endpoint_url with public IP")
 
-			// Get public IP first (GeoIP databases only work with public IPs)
-			publicIP, err = c.getPublicIP()
+			// Try to lookup geolocation using local IP
+			// Note: This will only work if the client has a public IP address
+			// For clients behind NAT, geolocation will use the local IP which may not be accurate
+			geoData, err := c.getGeolocationFromIP(geoIPPath, localIP)
 			if err != nil {
-				log.Printf("Warning: Failed to get public IP: %v", err)
+				log.Printf("Warning: Failed to get geolocation from database: %v", err)
+				log.Printf("Continuing without geolocation data")
 			} else {
-				log.Printf("Public IP detected: %s", publicIP)
-
-				// Lookup geolocation using public IP
-				geoData, err := c.getGeolocationFromDB(geoIPPath)
-				if err != nil {
-					log.Printf("Warning: Failed to get geolocation from database: %v", err)
-					log.Printf("Continuing without geolocation data")
-				} else {
-					latitude = geoData["latitude"].(float64)
-					longitude = geoData["longitude"].(float64)
-					country = geoData["country"].(string)
-					city = geoData["city"].(string)
-					log.Printf("GeoIP database lookup: City=%s, Country=%s, Coords=(%.4f, %.4f)",
-						city, country, latitude, longitude)
-				}
+				publicIP = localIP // Use local IP as public IP
+				latitude = geoData["latitude"].(float64)
+				longitude = geoData["longitude"].(float64)
+				country = geoData["country"].(string)
+				city = geoData["city"].(string)
+				log.Printf("GeoIP database lookup: City=%s, Country=%s, Coords=(%.4f, %.4f)",
+					city, country, latitude, longitude)
 			}
 		}
 	} else {
@@ -539,42 +535,16 @@ func (c *MetricsCollector) getLocalIP() (string, error) {
 	return "", fmt.Errorf("no local IP address found")
 }
 
-func (c *MetricsCollector) getPublicIP() (string, error) {
-	// Use a simple, reliable service with high rate limits
-	resp, err := c.httpClient.Get("https://api.ipify.org")
-	if err != nil {
-		return "", fmt.Errorf("failed to fetch public IP: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("API returned status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
-	}
-
-	return string(body), nil
-}
-
-func (c *MetricsCollector) getGeolocationFromDB(dbPath string) (map[string]interface{}, error) {
-	// Get public IP for lookup
-	publicIP, err := c.getPublicIP()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get public IP: %w", err)
-	}
-
+func (c *MetricsCollector) getGeolocationFromIP(dbPath, ipAddress string) (map[string]interface{}, error) {
 	db, err := geoip2.Open(dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open GeoIP database: %w", err)
 	}
 	defer db.Close()
 
-	ip := net.ParseIP(publicIP)
+	ip := net.ParseIP(ipAddress)
 	if ip == nil {
-		return nil, fmt.Errorf("invalid IP address: %s", publicIP)
+		return nil, fmt.Errorf("invalid IP address: %s", ipAddress)
 	}
 
 	record, err := db.City(ip)
@@ -588,7 +558,7 @@ func (c *MetricsCollector) getGeolocationFromDB(dbPath string) (map[string]inter
 	}
 
 	return map[string]interface{}{
-		"ip":        publicIP,
+		"ip":        ipAddress,
 		"latitude":  record.Location.Latitude,
 		"longitude": record.Location.Longitude,
 		"country":   record.Country.IsoCode,

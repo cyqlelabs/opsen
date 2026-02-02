@@ -41,6 +41,7 @@ type ServerConfig struct {
 
 	// Sticky session configuration
 	StickyHeader        string `yaml:"sticky_header"`         // Header name for sticky sessions (e.g., "X-Session-ID", "X-User-ID")
+	StickyByIP          bool   `yaml:"sticky_by_ip"`          // Use client IP for sticky sessions when header is not present (default: false)
 	StickyAffinityEnabled bool `yaml:"sticky_affinity_enabled"` // Prefer same server for different tiers (default: true)
 	PendingAllocationTimeoutSecs int `yaml:"pending_allocation_timeout_seconds"` // Time before pending allocations are cleaned up (default: 120)
 
@@ -110,6 +111,7 @@ func LoadServerConfig(path string) (*ServerConfig, error) {
 
 		// Sticky session defaults
 		StickyHeader:          "",         // Disabled by default
+		StickyByIP:            false,      // Disabled by default
 		StickyAffinityEnabled: true,       // When enabled, prefer same server across tiers
 		PendingAllocationTimeoutSecs: 120, // 2 minutes default
 
