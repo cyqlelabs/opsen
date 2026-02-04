@@ -1263,6 +1263,18 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		// ModifyResponse: ReverseProxy automatically forwards all headers from backend
 		// We don't need to manually copy them here
 		ModifyResponse: nil,
+		// ErrorHandler handles backend connection errors gracefully
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			// Check if error is due to client disconnect (context canceled)
+			if r.Context().Err() != nil {
+				// Client disconnected - log but don't send response
+				log.Printf("Client disconnected during proxy: %s %s", r.Method, r.URL.Path)
+				return
+			}
+			// Backend error - log and return 502
+			log.Printf("Proxy error for %s %s: %v", r.Method, r.URL.Path, err)
+			http.Error(w, "Bad Gateway", http.StatusBadGateway)
+		},
 		// FlushInterval enables SSE/streaming support
 		// -1 = flush immediately (best for SSE), 0 = no flush, >0 = flush at interval
 		FlushInterval: time.Duration(s.config.ProxySSEFlushInterval) * time.Millisecond,
