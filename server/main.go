@@ -67,14 +67,30 @@ func (c *ClientState) SelectEndpoint(path string) string {
 		return c.Endpoint
 	}
 
-	for _, ep := range c.Endpoints {
+	// Find the best match based on path specificity
+	// Prefer longer (more specific) paths over shorter ones
+	// If path lengths are equal, prefer earlier endpoints
+	bestMatch := -1
+	bestPathLen := -1
+
+	for i, ep := range c.Endpoints {
 		for _, prefix := range ep.Paths {
 			if strings.HasPrefix(path, prefix) {
-				return ep.URL
+				// Prefer longer path matches (more specific)
+				// If same length, earlier endpoint wins (already stored)
+				if len(prefix) > bestPathLen {
+					bestMatch = i
+					bestPathLen = len(prefix)
+				}
 			}
 		}
 	}
 
+	if bestMatch >= 0 {
+		return c.Endpoints[bestMatch].URL
+	}
+
+	// No match found, return first endpoint as fallback
 	if len(c.Endpoints) > 0 {
 		return c.Endpoints[0].URL
 	}

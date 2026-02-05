@@ -163,6 +163,66 @@ func TestClientState_SelectEndpoint(t *testing.T) {
 			path:     "/v1/test",
 			expected: "http://first:11000",
 		},
+		{
+			name: "Path specificity - longer path wins over catch-all",
+			client: &ClientState{
+				Endpoint: "http://fallback:11000",
+				Endpoints: []common.EndpointConfig{
+					{URL: "http://api:11000", Paths: []string{"/v1", "/api"}},
+					{URL: "http://monitor:8002", Paths: []string{"/"}},
+				},
+			},
+			path:     "/v1/sessions",
+			expected: "http://api:11000", // /v1 (length 3) wins over / (length 1)
+		},
+		{
+			name: "Path specificity - subscriptions without specific path uses catch-all",
+			client: &ClientState{
+				Endpoint: "http://fallback:11000",
+				Endpoints: []common.EndpointConfig{
+					{URL: "http://api:11000", Paths: []string{"/v1", "/api", "/auth", "/admin"}},
+					{URL: "http://monitor:8002", Paths: []string{"/"}},
+				},
+			},
+			path:     "/subscriptions/current",
+			expected: "http://monitor:8002", // Only / matches, so monitor endpoint wins
+		},
+		{
+			name: "Path specificity - subscriptions with specific path configured",
+			client: &ClientState{
+				Endpoint: "http://fallback:11000",
+				Endpoints: []common.EndpointConfig{
+					{URL: "http://api:11000", Paths: []string{"/v1", "/api", "/auth", "/admin", "/subscriptions"}},
+					{URL: "http://monitor:8002", Paths: []string{"/"}},
+				},
+			},
+			path:     "/subscriptions/current",
+			expected: "http://api:11000", // /subscriptions (length 14) wins over / (length 1)
+		},
+		{
+			name: "Path specificity - longer specific path wins",
+			client: &ClientState{
+				Endpoint: "http://fallback:11000",
+				Endpoints: []common.EndpointConfig{
+					{URL: "http://short:11000", Paths: []string{"/api"}},
+					{URL: "http://long:8002", Paths: []string{"/api/v2"}},
+				},
+			},
+			path:     "/api/v2/users",
+			expected: "http://long:8002", // /api/v2 (length 7) wins over /api (length 4)
+		},
+		{
+			name: "Path specificity - equal length prefers first endpoint",
+			client: &ClientState{
+				Endpoint: "http://fallback:11000",
+				Endpoints: []common.EndpointConfig{
+					{URL: "http://first:11000", Paths: []string{"/api"}},
+					{URL: "http://second:8002", Paths: []string{"/app"}},
+				},
+			},
+			path:     "/api/test",
+			expected: "http://first:11000", // Both /api and /app same length, first endpoint wins
+		},
 	}
 
 	for _, tt := range tests {
