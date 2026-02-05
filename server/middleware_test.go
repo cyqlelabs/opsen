@@ -1066,3 +1066,94 @@ func TestCircuitBreakerState_String(t *testing.T) {
 	}
 }
 
+// TestPanicRecovery_AbortHandler verifies http.ErrAbortHandler is re-panicked
+// and doesn't trigger error response (used by ReverseProxy for SSE client disconnects)
+func TestPanicRecovery_AbortHandler(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic(http.ErrAbortHandler)
+	})
+
+	wrapped := PanicRecovery(handler)
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	rec := httptest.NewRecorder()
+
+	// Should re-panic http.ErrAbortHandler
+	defer func() {
+		if r := recover(); r != http.ErrAbortHandler {
+			t.Errorf("Expected http.ErrAbortHandler to be re-panicked, got %v", r)
+		}
+	}()
+
+	wrapped.ServeHTTP(rec, req)
+}
+
+// TestPanicRecovery_OtherPanic verifies other panics are caught and return 500
+func TestPanicRecovery_OtherPanic(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic("some other error")
+	})
+
+	wrapped := PanicRecovery(handler)
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	rec := httptest.NewRecorder()
+
+	// Should NOT re-panic other errors
+	wrapped.ServeHTTP(rec, req)
+
+	// Should return 500
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("Expected status 500, got %d", rec.Code)
+	}
+}
+
+// TestTimeout_AbortHandler verifies http.ErrAbortHandler is re-panicked in timeout middleware
+func TestTimeout_AbortHandler(t *testing.T) {
+	timeout := 100 * time.Millisecond
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic(http.ErrAbortHandler)
+	})
+
+	middleware := Timeout(timeout)
+	wrapped := middleware(handler)
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	rec := httptest.NewRecorder()
+
+	// Should re-panic http.ErrAbortHandler
+	defer func() {
+		if r := recover(); r != http.ErrAbortHandler {
+			t.Errorf("Expected http.ErrAbortHandler to be re-panicked, got %v", r)
+		}
+	}()
+
+	wrapped.ServeHTTP(rec, req)
+}
+
+// TestTimeoutSkipsSSE verifies timeout middleware skips SSE connections
+func TestTimeoutSkipsSSE(t *testing.T) {
+	timeout := 50 * time.Millisecond
+
+	// Handler that takes longer than timeout but is SSE
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(100 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	middleware := Timeout(timeout)
+	wrapped := middleware(handler)
+
+	req := httptest.NewRequest("GET", "/test", nil)
+	req.Header.Set("Accept", "text/event-stream")
+	rec := httptest.NewRecorder()
+
+	wrapped.ServeHTTP(rec, req)
+
+	// Should complete without timeout (status 200)
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected SSE request to skip timeout and return 200, got %d", rec.Code)
+	}
+}
+

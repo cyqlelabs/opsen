@@ -17,6 +17,13 @@ func PanicRecovery(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if err := recover(); err != nil {
+				// http.ErrAbortHandler is intentionally used by httputil.ReverseProxy
+				// to abort when clients disconnect during streaming (SSE, etc.)
+				// Don't log or try to write a response - just re-panic to let http.Server handle it
+				if err == http.ErrAbortHandler {
+					panic(err) // Re-panic to let http.Server silently discard
+				}
+
 				stack := debug.Stack()
 				log.Printf("PANIC RECOVERED: %v\n%s", err, stack)
 				http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -121,6 +128,11 @@ func Timeout(timeout time.Duration) func(http.Handler) http.Handler {
 			case <-done:
 				return
 			case err := <-panicChan:
+				// http.ErrAbortHandler is intentional - re-panic to let http.Server handle it
+				if err == http.ErrAbortHandler {
+					panic(err)
+				}
+
 				stack := debug.Stack()
 				log.Printf("PANIC in timeout goroutine: %v\n%s", err, stack)
 				tw.setTimedOut()
