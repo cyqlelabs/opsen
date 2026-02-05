@@ -438,6 +438,20 @@ endpoint_url: http://backend-3.internal:9000
 
 Each client monitors its own resources and reports to the same load balancer server.
 
+**Path-Based Routing (Optional):**
+
+Instead of a single `endpoint_url`, you can configure multiple endpoints with path-based routing:
+
+```yaml
+endpoints:
+  - url: https://backend:11000
+    paths: ["/v1", "/api", "/auth", "/admin", "/subscriptions"]
+  - url: https://backend:8002
+    paths: ["/monitor"]
+```
+
+Routing prioritizes **longer (more specific) paths** over shorter ones. For example, `/v1/sessions` matches `/v1` (length 3) instead of `/` (length 1), preventing catch-all paths from intercepting API requests.
+
 **Run:**
 
 ```bash
