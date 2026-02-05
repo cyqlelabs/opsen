@@ -58,7 +58,110 @@ type ClientState struct {
 	ConsecutiveSuccesses int
 }
 
-func (c *ClientState) SelectEndpoint(path string) string {
+// matchWildcard checks if a path matches a wildcard pattern
+// Supports URL-style wildcards:
+//   - "*" matches any sequence of characters (including /)
+//   - "?" matches any single character
+func matchWildcard(path, pattern string) bool {
+	// Handle empty cases
+	if pattern == "" {
+		return path == ""
+	}
+	if path == "" {
+		return pattern == "*" || pattern == "/*"
+	}
+
+	// Simple non-recursive implementation
+	pi, pj := 0, 0 // path index, pattern index
+	star := -1      // position of last * in pattern
+	match := 0      // position in path when we saw the *
+
+	for pi < len(path) {
+		if pj < len(pattern) {
+			switch pattern[pj] {
+			case '*':
+				// Remember position of * and current path position
+				star = pj
+				match = pi
+				pj++
+				continue
+			case '?':
+				// ? matches any single character
+				pi++
+				pj++
+				continue
+			default:
+				// Character must match
+				if path[pi] == pattern[pj] {
+					pi++
+					pj++
+					continue
+				}
+			}
+		}
+
+		// Mismatch - if we have a *, backtrack
+		if star != -1 {
+			pj = star + 1
+			match++
+			pi = match
+			continue
+		}
+
+		return false
+	}
+
+	// Consume remaining *s in pattern
+	for pj < len(pattern) && pattern[pj] == '*' {
+		pj++
+	}
+
+	return pj == len(pattern)
+}
+
+// matchPathPattern checks if a path matches a pattern with wildcard support
+// Supports:
+//   - Exact prefix matching: "/api" matches "/api", "/api/users", etc.
+//   - Wildcards: "/api/*" matches "/api/anything", "/*" matches everything
+//   - Pattern matching: "/api/*/users" matches "/api/v1/users", "/api/v2/users"
+// Returns: (matched, specificity_score)
+//   - specificity_score is used to prioritize matches (higher = more specific)
+func matchPathPattern(requestPath, pattern string) (bool, int) {
+	// Handle empty pattern
+	if pattern == "" {
+		return requestPath == "", 0
+	}
+
+	// Handle exact matches first (highest priority)
+	if requestPath == pattern {
+		return true, len(pattern) * 1000 // Exact match gets highest score
+	}
+
+	// Check if pattern contains wildcards
+	hasWildcard := strings.Contains(pattern, "*") || strings.Contains(pattern, "?")
+
+	if hasWildcard {
+		// Use custom wildcard matching for URL paths
+		if matchWildcard(requestPath, pattern) {
+			// Specificity: longer patterns with fewer wildcards = more specific
+			wildcardCount := strings.Count(pattern, "*") + strings.Count(pattern, "?")
+			// Score: pattern length * 100, minus 50 per wildcard
+			score := (len(pattern) * 100) - (wildcardCount * 50)
+			return true, score
+		}
+		return false, 0
+	}
+
+	// No wildcards - use prefix matching (backward compatible)
+	if strings.HasPrefix(requestPath, pattern) {
+		// Prefix match gets medium score (between exact and wildcard)
+		return true, len(pattern) * 500
+	}
+
+	return false, 0
+}
+
+func (c *ClientState) SelectEndpoint(requestPath string) string {
 	if c == nil {
 		return ""
 	}
@@ -67,21 +170,18 @@ func (c *ClientState) SelectEndpoint(path string) string {
 		return c.Endpoint
 	}
 
-	// Find the best match based on path specificity
-	// Prefer longer (more specific) paths over shorter ones
-	// If path lengths are equal, prefer earlier endpoints
+	// Find the best match based on pattern specificity
+	// Priority: exact match > prefix match > wildcard match
+	// Within each category: longer/more specific patterns win
 	bestMatch := -1
-	bestPathLen := -1
+	bestScore := -1
 
 	for i, ep := range c.Endpoints {
-		for _, prefix := range ep.Paths {
-			if strings.HasPrefix(path, prefix) {
-				// Prefer longer path matches (more specific)
-				// If same length, earlier endpoint wins (already stored)
-				if len(prefix) > bestPathLen {
-					bestMatch = i
-					bestPathLen = len(prefix)
-				}
+		for _, pattern := range ep.Paths {
+			matched, score := matchPathPattern(requestPath, pattern)
+			if matched && score > bestScore {
+				bestMatch = i
+				bestScore = score
 			}
 		}
 	}

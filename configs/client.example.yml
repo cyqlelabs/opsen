@@ -10,6 +10,24 @@ server_url: http://lb.example.com:8080
 #   endpoint_url: http://10.0.0.5:8080
 # endpoint_url: ""
 
+# Optional: Multiple endpoints with path-based routing
+# Supports exact matches, prefix matching, and wildcards
+# Priority: exact match > prefix match > wildcard match
+# Longer/more specific patterns always win
+# Examples:
+#   endpoints:
+#     - url: https://backend:11000
+#       paths: ["/v1", "/api", "/auth"]          # Prefix: matches /api, /api/users, etc.
+#     - url: https://backend:8002
+#       paths: ["/monitor/*"]                     # Wildcard: matches /monitor/anything
+#     - url: https://backend:9000
+#       paths: ["/api/*/users"]                   # Pattern: matches /api/v1/users, /api/v2/users
+#     - url: https://backend:7000
+#       paths: ["/*"]                             # Catch-all: matches everything else
+#
+# If neither endpoint_url nor endpoints is set, uses http://{local_ip}:11000
+# endpoints: []
+
 # Geolocation configuration (optional)
 # By default, the client automatically downloads and uses the GeoIP database
 # from Opsen's S3 mirror (no authentication required) to ./GeoLite2-City.mmdb

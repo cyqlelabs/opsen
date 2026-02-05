@@ -441,17 +441,35 @@ Each client monitors its own resources and reports to the same load balancer ser
 
 **Path-Based Routing (Optional):**
 
-Instead of a single `endpoint_url`, you can configure multiple endpoints with path-based routing:
+Instead of a single `endpoint_url`, you can configure multiple endpoints with path-based routing. Supports **exact matches**, **prefix matching**, and **wildcards**:
 
 ```yaml
 endpoints:
   - url: https://backend:11000
-    paths: ["/v1", "/api", "/auth", "/admin", "/subscriptions"]
+    paths: ["/v1", "/api", "/auth"]           # Prefix: matches /api, /api/users, etc.
   - url: https://backend:8002
-    paths: ["/monitor"]
+    paths: ["/monitor/*"]                      # Wildcard: matches /monitor/anything
+  - url: https://backend:9000
+    paths: ["/api/*/users"]                    # Pattern: matches /api/v1/users, /api/v2/users
+  - url: https://backend:7000
+    paths: ["/*"]                              # Catch-all: matches everything else
 ```
 
-Routing prioritizes **longer (more specific) paths** over shorter ones. For example, `/v1/sessions` matches `/v1` (length 3) instead of `/` (length 1), preventing catch-all paths from intercepting API requests.
+**Pattern Types:**
+- **Exact match**: `/api/users` matches only `/api/users`
+- **Prefix match**: `/api` matches `/api`, `/api/users`, `/api/v1/sessions`, etc.
+- **Wildcard**: `/api/*` matches any path starting with `/api/` (e.g., `/api/anything`)
+- **Pattern**: `/api/*/users` matches `/api/v1/users`, `/api/v2/users`, etc.
+- **Catch-all**: `/*` matches any path
+
+**Routing Priority:**
+1. Exact match (highest priority)
+2. Prefix match (medium priority)
+3. Wildcard match (lower priority)
+4. Within each category: longer/more specific patterns win
+5. If no match: falls back to first endpoint
+
+Example: Request to `/api/users` will match exact `/api/users` over prefix `/api` over wildcard `/api/*` over catch-all `/*`.
 
 **Run:**
 

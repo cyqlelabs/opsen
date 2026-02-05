@@ -122,6 +122,20 @@ make clean
 - `ResourceStats` - Current resource usage from client (including GPU array)
 - `ClientRegistration` - Initial registration data (including total GPUs and models)
 - `RoutingRequest/Response` - Routing endpoint payloads
+- `EndpointConfig` - Backend endpoint with path-based routing (URL + paths array)
+
+**Endpoint Selection (`server/main.go`):**
+- `SelectEndpoint(requestPath)` - Selects best matching endpoint for a request path
+- Supports three pattern types:
+  - **Exact match**: `/api/users` matches only `/api/users`
+  - **Prefix match**: `/api` matches `/api`, `/api/users`, etc. (no wildcards)
+  - **Wildcard match**: `/api/*` matches `/api/anything`, `/api/v1/users/123`, etc.
+- Pattern matching with wildcards: `/api/*/users` matches `/api/v1/users`, `/api/v2/users`
+- Priority: exact match > prefix match > wildcard match
+- Within each category: longer/more specific patterns win
+- If no match: falls back to first endpoint in array
+- Implementation uses `matchWildcard()` for glob-style pattern matching
+- Specificity scoring: exact=1000×length, prefix=500×length, wildcard=100×length-50×wildcards
 
 ## Key Features to Understand
 
