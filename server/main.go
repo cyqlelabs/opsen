@@ -1177,38 +1177,43 @@ func (s *Server) handleProxyOrNotFound(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
-	// Read the request body
-	bodyBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "Failed to read request body", http.StatusBadRequest)
-		return
-	}
-	defer r.Body.Close()
+	isWebSocket := strings.ToLower(r.Header.Get("Upgrade")) == "websocket" &&
+		strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade")
 
-	// Extract sticky ID from configured header or client IP
+	var bodyBytes []byte
+	var tier string
+	var clientLat, clientLon float64
+
+	if !isWebSocket {
+		var err error
+		bodyBytes, err = io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Failed to read request body", http.StatusBadRequest)
+			return
+		}
+		defer r.Body.Close()
+
+		if len(bodyBytes) > 0 {
+			var payload map[string]interface{}
+			if err := json.Unmarshal(bodyBytes, &payload); err == nil {
+				tier, _ = payload[s.config.TierFieldName].(string)
+				clientLat, _ = payload["client_lat"].(float64)
+				clientLon, _ = payload["client_lon"].(float64)
+			}
+		}
+	} else {
+		tier = r.URL.Query().Get(s.config.TierFieldName)
+		if tier == "" {
+			tier = r.Header.Get(s.config.TierHeader)
+		}
+	}
+
 	stickyID := ""
 	if s.stickyHeader != "" {
 		stickyID = r.Header.Get(s.stickyHeader)
 	}
-	// If no header value and sticky_by_ip enabled, use client IP
 	if stickyID == "" && s.stickyByIP {
 		stickyID = getClientIP(r)
-	}
-
-	// Extract routing parameters from JSON body (if provided)
-	var tier string
-	var clientLat, clientLon float64
-
-	// Try to parse JSON body, but allow empty or non-JSON bodies
-	if len(bodyBytes) > 0 {
-		var payload map[string]interface{}
-		if err := json.Unmarshal(bodyBytes, &payload); err == nil {
-			// Successfully parsed JSON - use configured field name
-			tier, _ = payload[s.config.TierFieldName].(string)
-			clientLat, _ = payload["client_lat"].(float64)
-			clientLon, _ = payload["client_lon"].(float64)
-		}
-		// If JSON parsing fails, continue with defaults (no error)
 	}
 
 	// Extract client IP from headers or connection
