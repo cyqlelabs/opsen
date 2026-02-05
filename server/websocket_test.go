@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"cyqle.in/opsen/common"
@@ -156,12 +157,12 @@ func TestHandleProxy_HTTPWebSocketConcurrent(t *testing.T) {
 	})
 
 	// Create test backend
-	var httpCount, wsCount int
+	var httpCount, wsCount atomic.Int32
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Upgrade") == "websocket" {
-			wsCount++
+			wsCount.Add(1)
 		} else {
-			httpCount++
+			httpCount.Add(1)
 		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
@@ -226,14 +227,14 @@ func TestHandleProxy_HTTPWebSocketConcurrent(t *testing.T) {
 	}
 
 	// Verify both types of requests were processed
-	if httpCount == 0 {
+	if httpCount.Load() == 0 {
 		t.Error("No HTTP requests were processed")
 	}
-	if wsCount == 0 {
+	if wsCount.Load() == 0 {
 		t.Error("No WebSocket requests were processed")
 	}
 
-	t.Logf("Processed %d HTTP requests and %d WebSocket requests concurrently", httpCount, wsCount)
+	t.Logf("Processed %d HTTP requests and %d WebSocket requests concurrently", httpCount.Load(), wsCount.Load())
 }
 
 func TestHandleProxy_StickySessionsWithWebSocket(t *testing.T) {
