@@ -20,7 +20,7 @@ Production-ready load balancer that routes traffic based on real-time CPU, RAM, 
 - 🛡️ **Production Security** - API keys, IP whitelisting, rate limiting, TLS, request size limits, timeouts
 - 🔄 **High Reliability** - Circuit breaker, exponential backoff, panic recovery, graceful shutdown
 - 🎯 **Sticky Sessions** - Configurable session affinity via custom headers or client IP
-- 🚀 **Built-in Reverse Proxy** - SSE/streaming support, automatic tier detection, path preservation
+- 🚀 **Built-in Reverse Proxy** - WebSocket + SSE/streaming support, automatic tier detection, path preservation
 - ⚡ **Performance** - <15µs routing (100 backends), in-memory decisions, connection pooling
 
 ## Quick Installation
@@ -323,7 +323,8 @@ whitelisted_ips: [] # CIDR ranges (empty = allow all)
 rate_limit_per_minute: 60 # Requests per minute per IP (0 = disabled)
 rate_limit_burst: 120 # Burst capacity
 max_request_body_bytes: 10485760 # 10MB
-request_timeout_seconds: 30
+request_timeout_seconds: 30 # WebSocket + SSE exempt
+idle_timeout_seconds: 120 # Keep-alive timeout
 read_header_timeout_seconds: 10 # Slowloris protection
 disable_security_headers: false # Disable X-Frame-Options, X-XSS-Protection, etc. (e.g., when using WAF)
 
@@ -633,6 +634,7 @@ Configure paths to proxy, point frontend to load balancer. Zero code changes nee
 proxy_endpoints: ["/api", "/v1"] # Or "/*" for all paths
 sticky_header: "X-Session-ID" # Optional
 proxy_sse_flush_interval_ms: -1 # SSE support: -1=immediate, 0=disabled, >0=interval
+idle_timeout_seconds: 300 # Increase for long-lived WebSocket connections (default: 120)
 ```
 
 **Frontend:**
@@ -648,8 +650,9 @@ fetch(`${API_BASE}/api/users`, {
   body: JSON.stringify({ tier: "medium", ...data }), // Tier auto-detected
 });
 
-// SSE/streaming works automatically
+// SSE/streaming and WebSocket work automatically
 const eventSource = new EventSource(`${API_BASE}/events/stream`);
+const ws = new WebSocket(`wss://lb.example.com:8080/ws`);
 ```
 
 **Tier Detection (priority order):**
@@ -865,7 +868,7 @@ curl http://localhost:8080/clients | jq '.[] | {hostname, health_status, latency
 
 **Request Size Limits** - `max_request_body_bytes: 10485760` (10MB). Returns 413 on excess.
 
-**Timeout Enforcement** - `request_timeout_seconds: 30`, `read_header_timeout_seconds: 10` (Slowloris protection).
+**Timeout Enforcement** - `request_timeout_seconds: 30` (WebSocket/SSE exempt), `idle_timeout_seconds: 120` (keep-alive), `read_header_timeout_seconds: 10` (Slowloris protection).
 
 **TLS/HTTPS** - `tls_cert_file`, `tls_key_file`. `tls_insecure_skip_verify: false` (backend verification, dev only).
 

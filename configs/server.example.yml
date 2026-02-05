@@ -48,6 +48,32 @@ log_level: info
 #   - "broker-integration-key-xyz"  # For broker calling /route endpoint
 #   - "admin-dashboard-key-abc"     # For admin dashboard
 
+# Request timeouts and limits
+# These settings protect against DoS attacks and resource exhaustion
+# max_request_body_bytes: 10485760  # 10MB max request body (default)
+# request_timeout_seconds: 30       # Overall request timeout (default: 30s)
+#                                   # Note: SSE and WebSocket connections are exempt from this timeout
+# idle_timeout_seconds: 120         # Keep-alive idle timeout (default: 120s)
+#                                   # Connections with no activity for this duration are closed
+#                                   # Increase to 300-600s for long-lived WebSocket connections
+# read_header_timeout_seconds: 10   # Header read timeout for Slowloris attack prevention (default: 10s)
+
+# Rate limiting (per IP address, token bucket algorithm)
+# rate_limit_per_minute: 60   # Requests per minute per IP (0 = disabled/unlimited)
+# rate_limit_burst: 120        # Burst capacity (default: 2x rate limit)
+
+# IP whitelist (CIDR notation supported)
+# Leave empty to allow all IPs
+# whitelisted_ips:
+#   - "203.0.113.0/24"    # Allow entire subnet
+#   - "198.51.100.50"     # Allow specific IP
+
+# CORS configuration
+# enable_cors: false
+# cors_allowed_origins:
+#   - "https://app.example.com"
+#   - "https://admin.example.com"
+
 # Proxy configuration (optional)
 # Endpoint prefixes to intercept and route to backends
 # All paths starting with these prefixes will be proxied

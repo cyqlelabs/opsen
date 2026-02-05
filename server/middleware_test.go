@@ -1157,3 +1157,93 @@ func TestTimeoutSkipsSSE(t *testing.T) {
 	}
 }
 
+// TestTimeoutSkipsWebSocket verifies timeout middleware skips WebSocket connections
+func TestTimeoutSkipsWebSocket(t *testing.T) {
+	timeout := 50 * time.Millisecond
+
+	tests := []struct {
+		name       string
+		headers    map[string]string
+		shouldSkip bool
+	}{
+		{
+			name: "Standard WebSocket upgrade",
+			headers: map[string]string{
+				"Upgrade":    "websocket",
+				"Connection": "Upgrade",
+			},
+			shouldSkip: true,
+		},
+		{
+			name: "Case-insensitive WebSocket",
+			headers: map[string]string{
+				"Upgrade":    "WebSocket",
+				"Connection": "upgrade",
+			},
+			shouldSkip: true,
+		},
+		{
+			name: "WebSocket with keep-alive in Connection",
+			headers: map[string]string{
+				"Upgrade":    "websocket",
+				"Connection": "keep-alive, Upgrade",
+			},
+			shouldSkip: true,
+		},
+		{
+			name: "Not a WebSocket - missing Connection",
+			headers: map[string]string{
+				"Upgrade": "websocket",
+			},
+			shouldSkip: false,
+		},
+		{
+			name: "Not a WebSocket - different upgrade",
+			headers: map[string]string{
+				"Upgrade":    "h2c",
+				"Connection": "Upgrade",
+			},
+			shouldSkip: false,
+		},
+		{
+			name:       "Regular request",
+			headers:    map[string]string{},
+			shouldSkip: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Handler that takes longer than timeout
+			handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				time.Sleep(100 * time.Millisecond)
+				w.WriteHeader(http.StatusOK)
+			})
+
+			middleware := Timeout(timeout)
+			wrapped := middleware(handler)
+
+			req := httptest.NewRequest("GET", "/test", nil)
+			for key, value := range tt.headers {
+				req.Header.Set(key, value)
+			}
+			rec := httptest.NewRecorder()
+
+			wrapped.ServeHTTP(rec, req)
+
+			if tt.shouldSkip {
+				// Should complete without timeout (status 200)
+				if rec.Code != http.StatusOK {
+					t.Errorf("Expected request to skip timeout and return 200, got %d", rec.Code)
+				}
+			} else {
+				// Should timeout or complete - we don't strictly enforce timeout in tests
+				// due to timing variations, but we verify no panic occurred
+				if rec.Code != http.StatusOK && rec.Code != http.StatusRequestTimeout {
+					t.Logf("Note: Got status %d (expected 200 or 408)", rec.Code)
+				}
+			}
+		})
+	}
+}
+

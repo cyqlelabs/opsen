@@ -346,7 +346,7 @@ func main() {
 		Handler:           mux,
 		ReadTimeout:       time.Duration(yamlConfig.RequestTimeout) * time.Second,
 		WriteTimeout:      0, // Disabled for SSE/long-lived connections support
-		IdleTimeout:       120 * time.Second,
+		IdleTimeout:       time.Duration(yamlConfig.IdleTimeout) * time.Second,
 		ReadHeaderTimeout: time.Duration(yamlConfig.ReadHeaderTimeout) * time.Second,
 		MaxHeaderBytes:    1 << 20, // 1MB
 	}

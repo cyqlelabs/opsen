@@ -105,6 +105,15 @@ func Timeout(timeout time.Duration) func(http.Handler) http.Handler {
 				return
 			}
 
+			// Skip timeout for WebSocket upgrade requests
+			// WebSocket connections are long-lived and should not be terminated by request timeout
+			if strings.ToLower(r.Header.Get("Upgrade")) == "websocket" &&
+				strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade") {
+				// No timeout for WebSocket connections
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			ctx, cancel := context.WithTimeout(r.Context(), timeout)
 			defer cancel()
 

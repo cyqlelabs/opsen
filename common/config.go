@@ -32,6 +32,7 @@ type ServerConfig struct {
 	RateLimitBurst      int      `yaml:"rate_limit_burst"`      // Burst capacity (default: 2x rate limit)
 	MaxRequestBodyBytes int64    `yaml:"max_request_body_bytes"` // Max request body size (default: 10MB)
 	RequestTimeout      int      `yaml:"request_timeout_seconds"` // Request timeout in seconds (default: 30)
+	IdleTimeout         int      `yaml:"idle_timeout_seconds"`    // Idle timeout for keep-alive connections (default: 120)
 	EnableCORS          bool     `yaml:"enable_cors"`           // Enable CORS
 	CORSAllowedOrigins  []string `yaml:"cors_allowed_origins"`  // CORS allowed origins
 	ReadHeaderTimeout   int      `yaml:"read_header_timeout_seconds"` // ReadHeaderTimeout prevents Slowloris attacks
@@ -108,6 +109,7 @@ func LoadServerConfig(path string) (*ServerConfig, error) {
 		RateLimitBurst:      120,          // Allow burst of 120 requests
 		MaxRequestBodyBytes: 10 * 1024 * 1024, // 10MB max request body
 		RequestTimeout:      30,           // 30 second request timeout
+		IdleTimeout:         120,          // 120 second idle timeout (2 minutes)
 		ReadHeaderTimeout:   10,           // 10 second read header timeout (Slowloris protection)
 		TLSInsecureSkipVerify: false,      // Secure by default
 		DisableSecurityHeaders: false,     // Enable security headers by default
