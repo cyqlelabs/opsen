@@ -73,18 +73,19 @@ type ServerConfig struct {
 
 // ClientConfig represents the client configuration
 type ClientConfig struct {
-	ServerURL       string `yaml:"server_url"`
-	ClientID        string `yaml:"client_id"`
-	Hostname        string `yaml:"hostname"`
-	WindowMinutes   int    `yaml:"window_minutes"`
-	ReportInterval  int    `yaml:"report_interval_seconds"`
-	DiskPath        string `yaml:"disk_path"`
-	LogLevel        string `yaml:"log_level"`
-	EndpointURL     string `yaml:"endpoint_url"`     // Optional: Override endpoint URL (e.g., "https://192.168.1.10:11000")
-	GeoIPDBPath     string `yaml:"geoip_db_path"`    // Optional: Path to MaxMind GeoLite2-City.mmdb
-	SkipGeolocation bool   `yaml:"skip_geolocation"` // Optional: Skip geolocation entirely
-	InsecureTLS     bool   `yaml:"insecure_tls"`     // Optional: Skip TLS certificate verification (for self-signed certs)
-	ServerKey       string `yaml:"server_key"`       // Optional: Server key for authentication (must match server's server_key)
+	ServerURL       string           `yaml:"server_url"`
+	ClientID        string           `yaml:"client_id"`
+	Hostname        string           `yaml:"hostname"`
+	WindowMinutes   int              `yaml:"window_minutes"`
+	ReportInterval  int              `yaml:"report_interval_seconds"`
+	DiskPath        string           `yaml:"disk_path"`
+	LogLevel        string           `yaml:"log_level"`
+	EndpointURL     string           `yaml:"endpoint_url"`
+	Endpoints       []EndpointConfig `yaml:"endpoints"`
+	GeoIPDBPath     string           `yaml:"geoip_db_path"`
+	SkipGeolocation bool             `yaml:"skip_geolocation"`
+	InsecureTLS     bool             `yaml:"insecure_tls"`
+	ServerKey       string           `yaml:"server_key"`
 }
 
 // LoadServerConfig loads server configuration from YAML file

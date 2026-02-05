@@ -88,22 +88,29 @@ type ResourceStats struct {
 	City          string    `json:"city"`
 }
 
+// EndpointConfig defines a backend endpoint with path-based routing
+type EndpointConfig struct {
+	URL   string   `json:"url" yaml:"url"`
+	Paths []string `json:"paths" yaml:"paths"`
+}
+
 // ClientRegistration is sent when a client first connects
 type ClientRegistration struct {
-	ClientID     string   `json:"client_id"`
-	Hostname     string   `json:"hostname"`
-	PublicIP     string   `json:"public_ip"`
-	LocalIP      string   `json:"local_ip"`      // Local/private IP address
-	Latitude     float64  `json:"latitude"`
-	Longitude    float64  `json:"longitude"`
-	Country      string   `json:"country"`
-	City         string   `json:"city"`
-	TotalCPU     int      `json:"total_cpu"`
-	TotalMemory  float64  `json:"total_memory_gb"`
-	TotalStorage float64  `json:"total_storage_gb"`
-	TotalGPUs    int      `json:"total_gpus,omitempty"`    // Number of GPUs (optional)
-	GPUModels    []string `json:"gpu_models,omitempty"`    // GPU model names (optional)
-	EndpointURL  string   `json:"endpoint_url,omitempty"`  // Optional: Override endpoint URL
+	ClientID     string           `json:"client_id"`
+	Hostname     string           `json:"hostname"`
+	PublicIP     string           `json:"public_ip"`
+	LocalIP      string           `json:"local_ip"`
+	Latitude     float64          `json:"latitude"`
+	Longitude    float64          `json:"longitude"`
+	Country      string           `json:"country"`
+	City         string           `json:"city"`
+	TotalCPU     int              `json:"total_cpu"`
+	TotalMemory  float64          `json:"total_memory_gb"`
+	TotalStorage float64          `json:"total_storage_gb"`
+	TotalGPUs    int              `json:"total_gpus,omitempty"`
+	GPUModels    []string         `json:"gpu_models,omitempty"`
+	EndpointURL  string           `json:"endpoint_url,omitempty"`
+	Endpoints    []EndpointConfig `json:"endpoints,omitempty"`
 }
 
 // RoutingRequest is sent from Caddy to determine which backend to use

@@ -29,6 +29,7 @@ type Config struct {
 	ReportInterval  int
 	DiskPath        string
 	EndpointURL     string
+	Endpoints       []common.EndpointConfig
 	GeoIPDBPath     string
 	SkipGeolocation bool
 	InsecureTLS     bool
@@ -102,6 +103,7 @@ func main() {
 		ReportInterval:  yamlConfig.ReportInterval,
 		DiskPath:        yamlConfig.DiskPath,
 		EndpointURL:     yamlConfig.EndpointURL,
+		Endpoints:       yamlConfig.Endpoints,
 		GeoIPDBPath:     yamlConfig.GeoIPDBPath,
 		SkipGeolocation: yamlConfig.SkipGeolocation,
 		InsecureTLS:     yamlConfig.InsecureTLS,
@@ -297,6 +299,7 @@ func (c *MetricsCollector) register() error {
 		TotalGPUs:    totalGPUs,
 		GPUModels:    gpuModels,
 		EndpointURL:  c.config.EndpointURL,
+		Endpoints:    c.config.Endpoints,
 	}
 
 	if totalGPUs > 0 {

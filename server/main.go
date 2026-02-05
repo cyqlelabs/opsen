@@ -48,14 +48,37 @@ type ClientState struct {
 	Registration common.ClientRegistration
 	Stats        common.ResourceStats
 	LastSeen     time.Time
-	Endpoint     string // e.g., "http://148.227.74.48:11000"
+	Endpoint     string
+	Endpoints    []common.EndpointConfig
 
-	// Health check state
-	HealthStatus         string    // "healthy", "unhealthy", "unknown"
-	LatencyMs            float64   // EWMA of probe latency in milliseconds
-	LastHealthCheck      time.Time // When last health check was performed
-	ConsecutiveFailures  int       // Consecutive health check failures
-	ConsecutiveSuccesses int       // Consecutive health check successes
+	HealthStatus         string
+	LatencyMs            float64
+	LastHealthCheck      time.Time
+	ConsecutiveFailures  int
+	ConsecutiveSuccesses int
+}
+
+func (c *ClientState) SelectEndpoint(path string) string {
+	if c == nil {
+		return ""
+	}
+
+	if len(c.Endpoints) == 0 {
+		return c.Endpoint
+	}
+
+	for _, ep := range c.Endpoints {
+		for _, prefix := range ep.Paths {
+			if strings.HasPrefix(path, prefix) {
+				return ep.URL
+			}
+		}
+	}
+
+	if len(c.Endpoints) > 0 {
+		return c.Endpoints[0].URL
+	}
+	return c.Endpoint
 }
 
 // PendingAllocation tracks resources reserved for in-flight session creations
@@ -489,19 +512,20 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Determine endpoint: use override if provided, otherwise construct from local IP
 	var endpoint string
-	if reg.EndpointURL != "" {
+	var endpoints []common.EndpointConfig
+
+	if len(reg.Endpoints) > 0 {
+		endpoints = reg.Endpoints
+		endpoint = reg.Endpoints[0].URL
+	} else if reg.EndpointURL != "" {
 		endpoint = reg.EndpointURL
 	} else if reg.LocalIP != "" {
 		endpoint = fmt.Sprintf("http://%s:11000", reg.LocalIP)
 	} else {
-		// Fallback to public IP if local IP not available
 		endpoint = fmt.Sprintf("http://%s:11000", reg.PublicIP)
 	}
 
-	// Check for duplicate clients with same endpoint
-	// (same machine can run multiple clients for different services/ports)
 	s.mu.Lock()
 	duplicateIDs := []string{}
 	for id, client := range s.clientCache {
@@ -510,18 +534,17 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Remove duplicates from cache
 	for _, id := range duplicateIDs {
 		delete(s.clientCache, id)
 		log.Printf("Removed duplicate client: %s (same endpoint=%s)", id, endpoint)
 	}
 
-	// Add/update current client
 	s.clientCache[reg.ClientID] = &ClientState{
 		Registration: reg,
 		LastSeen:     time.Now(),
 		Endpoint:     endpoint,
-		HealthStatus: "unknown", // Will be updated by first health check
+		Endpoints:    endpoints,
+		HealthStatus: "unknown",
 	}
 	s.mu.Unlock()
 
@@ -1229,10 +1252,10 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse backend URL from endpoint
-	targetURL, err := url.Parse(client.Endpoint)
+	selectedEndpoint := client.SelectEndpoint(r.URL.Path)
+	targetURL, err := url.Parse(selectedEndpoint)
 	if err != nil {
-		log.Printf("Invalid backend URL: %s", client.Endpoint)
+		log.Printf("Invalid backend URL: %s", selectedEndpoint)
 		http.Error(w, "Invalid backend configuration", http.StatusInternalServerError)
 		return
 	}
@@ -1292,7 +1315,7 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		"method":     r.Method,
 		"path":       r.URL.Path,
 		"tier":       tier,
-		"endpoint":   client.Endpoint,
+		"endpoint":   selectedEndpoint,
 		"distance":   fmt.Sprintf("%.0f km", distance),
 		"sticky_id":  stickyID,
 		"client_id":  client.Registration.ClientID,
