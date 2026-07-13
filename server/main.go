@@ -1351,26 +1351,47 @@ func (s *Server) handleProxy(w http.ResponseWriter, r *http.Request) {
 		tier = r.Header.Get(s.config.TierHeader)
 	}
 
-	// Default tier if still not specified
+	// Fall back to the configured default tier (empty unless the operator sets
+	// one). A request that carries no tier signal AND has no configured default
+	// expresses no allocation intent, so it is proxied straight through without
+	// reserving capacity or being gated on it (see selectClientPassthrough).
+	// Only an explicit tier — from the request body/query/header, or default_tier
+	// — reserves resources and is capacity-gated. This keeps the LB generic:
+	// callers, not the LB, decide which requests are session allocations by
+	// tagging them with a tier. (Previously an untagged request was forced to
+	// "lite", so unrelated traffic — health probes, static assets, scanners —
+	// reserved real session slots and could 503 the whole backend.)
 	if tier == "" {
-		tier = "lite"
+		tier = s.config.DefaultTier
 	}
 
-	// Get tier spec from configured tiers
-	tierSpec, ok := s.tierSpecs[tier]
-	if !ok {
-		http.Error(w, fmt.Sprintf("Unknown tier: %s", tier), http.StatusBadRequest)
-		return
-	}
+	var client *ClientState
+	if tier == "" {
+		// No allocation intent: route to a healthy backend without reserving or
+		// capacity-gating. 503 only when there is genuinely no backend to serve.
+		client = s.selectClientPassthrough(stickyID, clientLat, clientLon)
+		if client == nil {
+			http.Error(w, "No available backends", http.StatusServiceUnavailable)
+			return
+		}
+	} else {
+		// Allocation intent: resolve the tier spec, reserve resources, and gate
+		// on capacity.
+		tierSpec, ok := s.tierSpecs[tier]
+		if !ok {
+			http.Error(w, fmt.Sprintf("Unknown tier: %s", tier), http.StatusBadRequest)
+			return
+		}
 
-	// Generate unique request ID for resource tracking
-	requestID := fmt.Sprintf("%d-%s", time.Now().UnixNano(), stickyID)
+		// Generate unique request ID for resource tracking
+		requestID := fmt.Sprintf("%d-%s", time.Now().UnixNano(), stickyID)
 
-	// Select client with stickiness support and resource reservation
-	client := s.selectClientWithStickiness(stickyID, tier, tierSpec, clientLat, clientLon, requestID)
-	if client == nil {
-		http.Error(w, "No available backends with sufficient resources", http.StatusServiceUnavailable)
-		return
+		// Select client with stickiness support and resource reservation
+		client = s.selectClientWithStickiness(stickyID, tier, tierSpec, clientLat, clientLon, requestID)
+		if client == nil {
+			http.Error(w, "No available backends with sufficient resources", http.StatusServiceUnavailable)
+			return
+		}
 	}
 
 	selectedEndpoint := client.SelectEndpoint(r.URL.Path)
@@ -1597,6 +1618,97 @@ func (s *Server) selectClientWithStickiness(stickyID, tier string, tierSpec comm
 	}
 
 	return selectedClient
+}
+
+// passthroughTier is the sticky_assignments tier key used to pin untagged
+// (no-tier) traffic to a backend. It reserves no session capacity — it exists
+// only so a client's untagged requests keep landing on the same backend, the
+// same stickiness the old "lite" default gave them (minus the reservation).
+const passthroughTier = ""
+
+// selectClientPassthrough routes a request that carries no allocation intent
+// (no tier signal and no configured default_tier). It follows the backend this
+// sticky_id is already pinned to when healthy — an existing passthrough pin, or
+// the client's real tiered session — otherwise picks any healthy backend and
+// pins future untagged traffic to it. It never reserves capacity or 503s on
+// load, returning nil only when there is no healthy backend at all.
+func (s *Server) selectClientPassthrough(stickyID string, clientLat, clientLon float64) *ClientState {
+	if stickyID != "" {
+		s.mu.RLock()
+		var assignedID string
+		if tierMap, ok := s.stickyAssignments[stickyID]; ok {
+			if id, ok := tierMap[passthroughTier]; ok {
+				assignedID = id // existing passthrough pin
+			} else {
+				for _, id := range tierMap { // else follow a real tiered session
+					assignedID = id
+					break
+				}
+			}
+		}
+		var client *ClientState
+		if assignedID != "" {
+			client = s.clientCache[assignedID]
+		}
+		s.mu.RUnlock()
+
+		if client != nil &&
+			time.Since(client.LastSeen) <= s.staleTimeout &&
+			(!s.config.HealthCheckEnabled || client.HealthStatus != "unhealthy") {
+			return client
+		}
+	}
+
+	client := s.findAnyHealthyClient(clientLat, clientLon)
+	if client != nil && stickyID != "" {
+		// Pin future untagged traffic from this sticky_id to this backend.
+		// No pending allocation is created, so it reserves no capacity.
+		s.createStickyAssignment(stickyID, passthroughTier, client.Registration.ClientID)
+	}
+	return client
+}
+
+// findAnyHealthyClient returns the best-scored healthy, non-stale backend
+// WITHOUT any capacity or pending-allocation check, so passthrough traffic is
+// never blocked by session-allocation pressure. Returns nil only when no
+// healthy backend exists.
+func (s *Server) findAnyHealthyClient(clientLat, clientLon float64) *ClientState {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var bestClient *ClientState
+	bestScore := math.Inf(1)
+
+	for _, client := range s.clientCache {
+		if time.Since(client.LastSeen) > s.staleTimeout {
+			continue
+		}
+		if s.config.HealthCheckEnabled && client.HealthStatus == "unhealthy" {
+			continue
+		}
+
+		distance := 0.0
+		if clientLat != 0 && clientLon != 0 &&
+			client.Registration.Latitude != 0 && client.Registration.Longitude != 0 {
+			distance = haversineDistance(
+				clientLat, clientLon,
+				client.Registration.Latitude, client.Registration.Longitude,
+			)
+		}
+
+		memoryUsagePct := 0.0
+		if client.Stats.MemoryTotal > 0 {
+			memoryUsagePct = (client.Stats.MemoryUsed / client.Stats.MemoryTotal) * 100
+		}
+
+		score := distance + memoryUsagePct + client.LatencyMs
+		if score < bestScore {
+			bestScore = score
+			bestClient = client
+		}
+	}
+
+	return bestClient
 }
 
 // findStickyAssignment checks if sticky_id+tier has an assigned backend with capacity

@@ -50,6 +50,7 @@ type ServerConfig struct {
 	// Tier selection configuration
 	TierFieldName       string `yaml:"tier_field_name"`       // JSON body field name for tier (default: "tier")
 	TierHeader          string `yaml:"tier_header"`           // Header name for tier (default: "X-Tier")
+	DefaultTier         string `yaml:"default_tier"`          // Tier assumed when a request carries no tier signal; empty = proxy through without reserving/gating capacity (default: "")
 
 	// Tier specifications
 	Tiers               []TierSpec `yaml:"tiers"`             // Resource requirements for each tier
