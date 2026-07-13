@@ -48,6 +48,8 @@ sudo systemctl restart opsen-client
 
 ## Configuration Options
 
+**`server.example.yml` and `client.example.yml` are the authoritative, fully-commented references** for every option. The snippets below cover the core essentials; see the example files for the complete set.
+
 ### Server (server.yml)
 
 ```yaml
@@ -66,6 +68,17 @@ stale_minutes: 5
 # Log level (debug, info, warn, error)
 log_level: info
 ```
+
+Additional option groups documented in `server.example.yml`:
+
+- **Tiers** – `tiers` resource specs (vCPU, memory, storage, optional GPU/VRAM)
+- **Tier detection** – `tier_field_name`, `tier_header`, `default_tier` (`""` = passthrough)
+- **Reverse proxy** – `proxy_endpoints`, `proxy_sse_flush_interval_ms`, `endpoints` (path-based routing)
+- **Sticky sessions** – `sticky_header`, `sticky_by_ip`, `sticky_affinity_enabled`, `pending_allocation_timeout_seconds`
+- **Health checks** – probe type/path, intervals, thresholds, timeout
+- **Timeouts** – `request_timeout_seconds`, `idle_timeout_seconds`, `read_header_timeout_seconds`
+- **Security** – API keys, IP whitelist (CIDR), rate limiting, request size limits, `disable_security_headers`, TLS, CORS
+- **Database** – `db_max_open_conns`, `db_max_idle_conns`
 
 ### Client (client.yml)
 

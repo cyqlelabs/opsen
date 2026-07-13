@@ -151,6 +151,13 @@ proxy_endpoints:
 # tier_field_name: "tier"     # JSON body field name and query parameter name (default: "tier")
 # tier_header: "X-Tier"        # HTTP header name for tier (default: "X-Tier")
 #
+# default_tier: ""             # Tier assumed when a request carries no tier signal
+#                              # "" (default) = proxy the request through WITHOUT reserving or
+#                              #                gating on capacity; untagged traffic (health probes,
+#                              #                static assets, scanners) never reserves session slots
+#                              #                and never 503s the backend
+#                              # Set a tier name (e.g. "lite") to force that tier for untagged traffic
+#
 # Example: Use "subscription_level" instead of "tier"
 # tier_field_name: "subscription_level"
 # tier_header: "X-Subscription-Level"

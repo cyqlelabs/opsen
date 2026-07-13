@@ -353,6 +353,7 @@ pending_allocation_timeout_seconds: 120
 # Tier Detection
 tier_field_name: "tier" # JSON body field
 tier_header: "X-Tier" # HTTP header
+default_tier: "" # Tier when no signal present ("" = passthrough, no capacity reservation)
 
 # Database
 db_max_open_conns: 25
@@ -678,13 +679,16 @@ const ws = new WebSocket(`wss://lb.example.com:8080/ws`);
 1. JSON body field (`tier_field_name`, default: "tier")
 2. Query parameter (`?tier=medium`)
 3. HTTP header (`tier_header`, default: "X-Tier")
-4. Default: "lite"
+4. `default_tier` if configured; otherwise the request is proxied through **without reserving or being gated on capacity** (passthrough)
+
+A request that carries no tier signal expresses no allocation intent. By default such traffic (health probes, static assets, scanners) passes straight through to a healthy backend — it never reserves session capacity and never returns 503 unless there is genuinely no backend available. Set `default_tier` to force a tier for untagged requests instead.
 
 Customize field names in server.yml:
 
 ```yaml
 tier_field_name: "subscription_level"
 tier_header: "X-Subscription-Level"
+default_tier: "lite" # Tier assumed when no signal present ("" = passthrough, the default)
 ```
 
 **Benefits:** Path preservation, SSE support, sticky sessions, no routing logic needed

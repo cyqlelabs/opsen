@@ -6,12 +6,13 @@ This document describes the testing infrastructure and how to run tests for the 
 
 The test suite is organized into several categories:
 
-### Server Tests (`server/main_test.go`)
+### Core Routing Tests (`server/main_test.go`)
 - **Stickiness Tests**: Verify sticky session functionality
   - Same backend routing for sticky sessions
   - Cross-tier affinity
   - Fallback on overload
   - Persistence across server restarts
+  - IP-based sticky fallback (when no sticky header present)
 
 - **Resource Allocation Tests**: Verify resource checking logic
   - CPU core availability (per-core usage)
@@ -30,25 +31,67 @@ The test suite is organized into several categories:
   - Stale client handling
   - Edge cases (no clients, all overloaded)
 
-### Common Tests
-- **`common/types_test.go`**: Data structure serialization/deserialization
-- **`common/config_test.go`**: Configuration loading and defaults
+### Endpoint Selection Tests (`server/endpoint_selection_test.go`, `server/endpoint_wildcard_test.go`)
+- Exact, prefix, and wildcard path matching
+- Specificity-based priority (exact > prefix > wildcard)
+- Fallback to first endpoint when no path matches
 
-### Middleware Tests (`server/middleware_test.go`)
-- Panic recovery
+### Reverse Proxy Tests (`server/proxy_test.go`, `server/proxy_coverage_test.go`, `server/proxy_notfound_test.go`)
+- Path preservation and request forwarding
+- Tier extraction from body, query, and headers
+- SSE / streaming responses (flush interval behavior)
+- Client-disconnect and backend-error handling
+- No-backend / not-found responses
+
+### Passthrough Tests (`server/passthrough_test.go`)
+- Untagged requests routed without reserving or gating on capacity
+- `default_tier` behavior (forced tier for untagged traffic)
+- `findAnyHealthyClient` selection
+
+### WebSocket Tests (`server/websocket_test.go`)
+- WebSocket upgrade detection and handling
+- Idle timeout exemption for long-lived connections
+
+### Health Check Tests (`server/health_test.go`)
+- TCP and HTTP probes
+- EWMA latency tracking
+- Health state transitions (unknown → healthy → unhealthy)
+- Failover and sticky-assignment cleanup for unhealthy backends
+
+### Handler & Registration Tests (`server/handlers_test.go`, `server/registration_endpoints_test.go`, `server/cleanup_test.go`)
+- Register / stats / route endpoints
+- Purge pending allocations endpoint
+- Stale client cleanup
+
+### Middleware Tests (`server/middleware_test.go`, `server/rate_limit_disabled_test.go`, `server/rate_limit_refill_test.go`)
+- Panic recovery (including `http.ErrAbortHandler`)
 - Request size limiting
-- Timeout handling
-- Rate limiting (per-IP)
+- Timeout handling (SSE exempt)
+- Rate limiting (per-IP token bucket, refill, disable via config)
 - API key authentication
 - IP whitelisting
-- Security headers
+- Security headers (and `disable_security_headers`)
 - Middleware chaining
+
+### Client Tests (`client/`)
+- **Metrics collection** (`metrics_test.go`, `metrics_collection_test.go`, `collector_additional_test.go`): CPU/memory/disk sampling and windowed averaging
+- **GPU collection** (`gpu_test.go`, `gpu_comprehensive_test.go`, `gpu_collector_edge_test.go`): NVML metrics and graceful disable when no GPU present
+- **Geolocation** (`geolocation_test.go`, `geolocation_comprehensive_test.go`, `geolocation_additional_test.go`): MaxMind GeoIP lookups and auto-download
+- **Circuit breaker** (`circuitbreaker_additional_test.go`): CLOSED → OPEN → HALF-OPEN transitions
+- **Registration & client functions** (`client_functions_test.go`, `main_test.go`, `additional_coverage_test.go`): retry/backoff and API-key handling
+
+### Common Tests (`common/`)
+- **`types_test.go`**: Data structure serialization/deserialization
+- **`config_test.go`, `config_edge_cases_test.go`, `config_save_test.go`**: Configuration loading, defaults, save/round-trip, and edge cases
+
+### Shared Test Utilities (`server/testutil_test.go`)
+- `TestDB`, `NewTestServer`, `NewMockClient`, `AssertClientSelected` / `AssertNoClient`
 
 ## Running Tests
 
 ### Run All Tests
 ```bash
-cd /home/nico/dev/projects/cyqle/platform/modules/loadbalancer
+# From the repository root
 go test ./...
 ```
 

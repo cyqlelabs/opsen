@@ -162,6 +162,7 @@ make clean
 - Automatically extracts tier from request body, query params, or headers
 - Forwards request to selected backend with path preserved
 - Supports sticky sessions via custom headers
+- **Passthrough for untagged traffic**: a request with no tier signal (and no `default_tier` configured) expresses no allocation intent, so it is routed via `selectClientPassthrough()` **without reserving or being gated on capacity** — probes/static/scanners never reserve session slots or 503 the backend. Only an explicit tier (body/query/header or `default_tier`) reserves resources and is capacity-gated. Set `default_tier` in server config to force a tier for untagged requests. See `handleProxy()`/`selectClientPassthrough()` in `server/main.go`.
 - **SSE Support**: Fully supports Server-Sent Events (SSE) and streaming responses
   - Configured via `proxy_sse_flush_interval_ms` in server config
   - `-1` = immediate flush (default, best for SSE)
