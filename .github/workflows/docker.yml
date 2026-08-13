@@ -36,7 +36,14 @@ jobs:
         id: branch
         run: |
           BRANCH=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}
+          # Docker tags allow [a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}, so a branch name
+          # such as "feature/foo" has to be slugified before it can be a tag.
+          TAG=$(printf '%s' "$BRANCH" | sed 's#[^a-zA-Z0-9._-]#-#g' | cut -c1-128)
+          case "$TAG" in
+            [!a-zA-Z0-9_]*) TAG="branch-$TAG" ;;
+          esac
           echo "name=$BRANCH" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
 
       - name: Build and push server image
         uses: docker/build-push-action@v5
@@ -46,7 +53,7 @@ jobs:
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ghcr.io/${{ github.repository_owner }}/opsen-server:${{ steps.branch.outputs.name }}
+            ghcr.io/${{ github.repository_owner }}/opsen-server:${{ steps.branch.outputs.tag }}
             ${{ github.ref == 'refs/heads/main' && format('ghcr.io/{0}/opsen-server:latest', github.repository_owner) || '' }}
           build-args: |
             VERSION=${{ steps.branch.outputs.name }}
@@ -61,7 +68,7 @@ jobs:
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           tags: |
-            ghcr.io/${{ github.repository_owner }}/opsen-client:${{ steps.branch.outputs.name }}
+            ghcr.io/${{ github.repository_owner }}/opsen-client:${{ steps.branch.outputs.tag }}
             ${{ github.ref == 'refs/heads/main' && format('ghcr.io/{0}/opsen-client:latest', github.repository_owner) || '' }}
           build-args: |
             VERSION=${{ steps.branch.outputs.name }}
