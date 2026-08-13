@@ -189,8 +189,24 @@ make clean
 - `server/proxy_test.go` - Reverse proxy functionality including SSE streaming
 - `server/health_test.go` - Health checks (TCP/HTTP probes, latency tracking, failover)
 - `server/middleware_test.go` - Middleware (auth, rate limiting, timeouts, panic recovery)
+- `server/startup_test.go` - Flag parsing, config resolution, handler assembly, `runServer` lifecycle (HTTP + TLS + shutdown)
+- `server/resilience_test.go` - Handler/sticky/cleanup behavior when the database is unavailable
+- `client/startup_test.go` - Client flag parsing, config resolution, `runClient`/`runCollector` loops
+- `client/gpu_nvml_fake_test.go` - GPU collector coverage using a fake NVML library
 - `common/types_test.go` - Type serialization
 - `common/config_test.go` - Configuration loading
+
+**Testability hooks (never reassigned by production code):**
+- `nvmlInit` / `nvmlShutdown` / `nvmlDeviceGetCount` / `nvmlDeviceGetHandleByIndex` in `client/gpu_collector.go`
+- `osExit` in `client/logger.go` and `server/logger.go` (fatal logging paths)
+- `geoIPDownloadURL` in `client/main.go`
+- The `ready func(net.Addr)` callback of `runServer` in `server/main.go` (lets tests bind port 0)
+
+**Entrypoint structure:** both `main()` functions are thin wrappers. Server:
+`parseServerFlags` → `loadServerRuntimeConfig` → `runServer` (which calls
+`newServerFromConfig`, `buildHandler`, `newHTTPServer`). Client:
+`parseClientFlags` → `loadClientRuntimeConfig` → `runClient` → `runCollector`.
+Put new startup logic in those helpers, not in `main()`, so it stays testable.
 
 **Test utilities (`server/testutil_test.go`):**
 - `TestDB(t)` - Creates isolated in-memory SQLite database for testing

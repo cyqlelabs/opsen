@@ -49,6 +49,10 @@ type Logger struct {
 var (
 	defaultLogger *Logger
 	once          sync.Once
+
+	// osExit is indirected so tests can exercise the fatal logging paths
+	// without terminating the test binary.
+	osExit = os.Exit
 )
 
 // InitLogger initializes the default logger
@@ -158,7 +162,7 @@ func (l *Logger) log(level LogLevel, message string, data map[string]interface{}
 
 	// Exit on fatal
 	if level == LogLevelFatal {
-		os.Exit(1)
+		osExit(1)
 	}
 }
 
@@ -237,7 +241,8 @@ func LogErrorWithData(message string, data map[string]interface{}) {
 // LogFatal logs a fatal message and exits
 func LogFatal(message string) {
 	if defaultLogger == nil {
-		log.Fatalf("FATAL: %s", message)
+		log.Printf("FATAL: %s", message)
+		osExit(1)
 		return
 	}
 	defaultLogger.log(LogLevelFatal, message, nil)
@@ -246,7 +251,8 @@ func LogFatal(message string) {
 // LogFatalWithData logs a fatal message with additional data and exits
 func LogFatalWithData(message string, data map[string]interface{}) {
 	if defaultLogger == nil {
-		log.Fatalf("FATAL: %s | data=%+v", message, data)
+		log.Printf("FATAL: %s | data=%+v", message, data)
+		osExit(1)
 		return
 	}
 	defaultLogger.log(LogLevelFatal, message, data)
