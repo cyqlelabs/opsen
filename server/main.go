@@ -206,48 +206,96 @@ type PendingAllocation struct {
 	RequestID string             // Unique request identifier (for logging)
 }
 
-func main() {
-	configFile := flag.String("config", "", "Path to YAML configuration file")
-	port := flag.Int("port", 0, "Server port")
-	dbPath := flag.String("db", "", "SQLite database path")
-	staleMinutes := flag.Int("stale", 0, "Client stale timeout (minutes)")
-	cleanupInterval := flag.Int("cleanup-interval", 0, "Cleanup interval (seconds)")
-	host := flag.String("host", "", "Host to bind to")
-	flag.Parse()
+// serverFlags holds the command-line overrides for the server configuration.
+type serverFlags struct {
+	configFile      string
+	port            int
+	dbPath          string
+	staleMinutes    int
+	cleanupInterval int
+	host            string
+}
 
-	// Load configuration from YAML file
-	yamlConfig, err := common.LoadServerConfig(*configFile)
+// parseServerFlags parses command-line arguments into serverFlags.
+func parseServerFlags(args []string) (*serverFlags, error) {
+	fs := flag.NewFlagSet("opsen-server", flag.ContinueOnError)
+
+	flags := &serverFlags{}
+	fs.StringVar(&flags.configFile, "config", "", "Path to YAML configuration file")
+	fs.IntVar(&flags.port, "port", 0, "Server port")
+	fs.StringVar(&flags.dbPath, "db", "", "SQLite database path")
+	fs.IntVar(&flags.staleMinutes, "stale", 0, "Client stale timeout (minutes)")
+	fs.IntVar(&flags.cleanupInterval, "cleanup-interval", 0, "Cleanup interval (seconds)")
+	fs.StringVar(&flags.host, "host", "", "Host to bind to")
+
+	if err := fs.Parse(args); err != nil {
+		return nil, err
+	}
+	return flags, nil
+}
+
+// applyServerFlagOverrides applies non-zero command-line overrides on top of the
+// YAML configuration.
+func applyServerFlagOverrides(yamlConfig *common.ServerConfig, flags *serverFlags) {
+	if flags == nil {
+		return
+	}
+	if flags.port > 0 {
+		yamlConfig.Port = flags.port
+	}
+	if flags.dbPath != "" {
+		yamlConfig.Database = flags.dbPath
+	}
+	if flags.staleMinutes > 0 {
+		yamlConfig.StaleMinutes = flags.staleMinutes
+	}
+	if flags.cleanupInterval > 0 {
+		yamlConfig.CleanupIntervalSecs = flags.cleanupInterval
+	}
+	if flags.host != "" {
+		yamlConfig.Host = flags.host
+	}
+}
+
+// loadServerRuntimeConfig resolves the effective server configuration from the
+// YAML file and the command-line overrides.
+func loadServerRuntimeConfig(flags *serverFlags) (*common.ServerConfig, error) {
+	configFile := ""
+	if flags != nil {
+		configFile = flags.configFile
+	}
+
+	yamlConfig, err := common.LoadServerConfig(configFile)
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Override with command-line flags if provided
-	if *port > 0 {
-		yamlConfig.Port = *port
-	}
-	if *dbPath != "" {
-		yamlConfig.Database = *dbPath
-	}
-	if *staleMinutes > 0 {
-		yamlConfig.StaleMinutes = *staleMinutes
-	}
-	if *cleanupInterval > 0 {
-		yamlConfig.CleanupIntervalSecs = *cleanupInterval
-	}
-	if *host != "" {
-		yamlConfig.Host = *host
-	}
+	applyServerFlagOverrides(yamlConfig, flags)
+	return yamlConfig, nil
+}
 
-	// Initialize logger
-	InitLogger(yamlConfig.LogLevel, yamlConfig.JSONLogging, "lb-server")
-	LogInfo("Load balancer server initializing...")
+// buildTierSpecs indexes the configured tiers by name.
+func buildTierSpecs(yamlConfig *common.ServerConfig) map[string]common.TierSpec {
+	tierSpecs := make(map[string]common.TierSpec)
+	for _, tier := range yamlConfig.Tiers {
+		tierSpecs[tier.Name] = tier
+	}
+	return tierSpecs
+}
 
+// stickyEnabled reports whether sticky sessions are configured in any form.
+func stickyEnabled(yamlConfig *common.ServerConfig) bool {
+	return yamlConfig.StickyHeader != "" || yamlConfig.StickyByIP
+}
+
+// newServerFromConfig opens the database and builds a Server from the resolved
+// configuration. The caller owns the database handle and must close it.
+func newServerFromConfig(yamlConfig *common.ServerConfig) (*Server, error) {
 	// Initialize database with connection pooling
 	db, err := initDatabase(yamlConfig.Database)
 	if err != nil {
-		LogFatal(fmt.Sprintf("Failed to initialize database: %v", err))
+		return nil, fmt.Errorf("failed to initialize database: %w", err)
 	}
-	defer db.Close()
 
 	// Configure database connection pool
 	db.SetMaxOpenConns(yamlConfig.DBMaxOpenConns)
@@ -259,11 +307,7 @@ func main() {
 		"conn_max_lifetime": yamlConfig.DBConnMaxLifetime,
 	})
 
-	// Build tier specs map from config
-	tierSpecs := make(map[string]common.TierSpec)
-	for _, tier := range yamlConfig.Tiers {
-		tierSpecs[tier.Name] = tier
-	}
+	tierSpecs := buildTierSpecs(yamlConfig)
 
 	server := &Server{
 		db:                    db,
@@ -293,9 +337,8 @@ func main() {
 	}
 
 	// Log sticky session configuration
-	stickyEnabled := yamlConfig.StickyHeader != "" || yamlConfig.StickyByIP
 	LogInfoWithData("Sticky session configuration", map[string]interface{}{
-		"enabled":          stickyEnabled,
+		"enabled":          stickyEnabled(yamlConfig),
 		"header":           yamlConfig.StickyHeader,
 		"by_ip":            yamlConfig.StickyByIP,
 		"affinity_enabled": yamlConfig.StickyAffinityEnabled,
@@ -307,22 +350,17 @@ func main() {
 	}
 
 	// Load sticky assignments if sticky sessions enabled
-	if stickyEnabled {
+	if stickyEnabled(yamlConfig) {
 		if err := server.loadStickyAssignments(); err != nil {
 			LogWarn(fmt.Sprintf("Failed to load sticky assignments: %v", err))
 		}
 	}
 
-	// Create context for graceful shutdown
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	return server, nil
+}
 
-	// Start cleanup goroutine
-	go server.cleanupStaleClients(ctx)
-
-	// Start health check goroutine
-	go server.runHealthChecks(ctx)
-
+// buildHandler wires the routing table and middleware chains for the server.
+func buildHandler(server *Server, yamlConfig *common.ServerConfig) http.Handler {
 	// Initialize middlewares
 	var rateLimiter *RateLimiter
 	if yamlConfig.RateLimitPerMinute > 0 {
@@ -366,7 +404,7 @@ func main() {
 	managementMiddlewares = append(managementMiddlewares,
 		RequestLogger,
 		RequestSizeLimit(yamlConfig.MaxRequestBodyBytes),
-		Timeout(time.Duration(yamlConfig.RequestTimeout) * time.Second),
+		Timeout(time.Duration(yamlConfig.RequestTimeout)*time.Second),
 		inputValidator.Middleware,
 		apiKeyAuth.Middleware,
 		ipWhitelist.Middleware,
@@ -385,7 +423,7 @@ func main() {
 	proxyMiddlewares = append(proxyMiddlewares,
 		RequestLogger,
 		RequestSizeLimit(yamlConfig.MaxRequestBodyBytes),
-		Timeout(time.Duration(yamlConfig.RequestTimeout) * time.Second),
+		Timeout(time.Duration(yamlConfig.RequestTimeout)*time.Second),
 	)
 	if rateLimiter != nil {
 		proxyMiddlewares = append(proxyMiddlewares, rateLimiter.Middleware)
@@ -438,26 +476,70 @@ func main() {
 		mux.Handle("/", ChainMiddleware(http.HandlerFunc(server.handleProxyOrNotFound), proxyMiddlewares...))
 	}
 
-	addr := fmt.Sprintf("%s:%d", yamlConfig.Host, yamlConfig.Port)
+	return mux
+}
 
-	// Create HTTP server with security timeouts
-	httpServer := &http.Server{
-		Addr:              addr,
-		Handler:           mux,
+// newHTTPServer creates the HTTP server with the configured security timeouts.
+func newHTTPServer(yamlConfig *common.ServerConfig, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              fmt.Sprintf("%s:%d", yamlConfig.Host, yamlConfig.Port),
+		Handler:           handler,
 		ReadTimeout:       time.Duration(yamlConfig.RequestTimeout) * time.Second,
 		WriteTimeout:      0, // Disabled for SSE/long-lived connections support
 		IdleTimeout:       time.Duration(yamlConfig.IdleTimeout) * time.Second,
 		ReadHeaderTimeout: time.Duration(yamlConfig.ReadHeaderTimeout) * time.Second,
 		MaxHeaderBytes:    1 << 20, // 1MB
 	}
+}
 
-	// Handle graceful shutdown
+// runServer starts the background workers and serves requests until the process
+// receives SIGINT/SIGTERM or ctx is cancelled.
+//
+// ready, when non-nil, is called with the bound listener address once the server
+// is accepting connections. Tests use it to discover an OS-assigned port.
+func runServer(ctx context.Context, yamlConfig *common.ServerConfig, ready func(net.Addr)) error {
+	server, err := newServerFromConfig(yamlConfig)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if closeErr := server.db.Close(); closeErr != nil {
+			LogWarn(fmt.Sprintf("Failed to close database: %v", closeErr))
+		}
+	}()
+
+	// Create context for graceful shutdown
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Start cleanup goroutine
+	go server.cleanupStaleClients(ctx)
+
+	// Start health check goroutine
+	go server.runHealthChecks(ctx)
+
+	httpServer := newHTTPServer(yamlConfig, buildHandler(server, yamlConfig))
+
+	listener, err := net.Listen("tcp", httpServer.Addr)
+	if err != nil {
+		return fmt.Errorf("failed to listen on %s: %w", httpServer.Addr, err)
+	}
+
+	// Handle graceful shutdown on signal or context cancellation
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigChan)
+
+	shutdownDone := make(chan struct{})
 	go func() {
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-		<-sigChan
+		defer close(shutdownDone)
 
-		LogInfo("Shutdown signal received, initiating graceful shutdown...")
+		select {
+		case <-sigChan:
+			LogInfo("Shutdown signal received, initiating graceful shutdown...")
+		case <-ctx.Done():
+			LogInfo("Shutdown requested, initiating graceful shutdown...")
+		}
 
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(),
 			time.Duration(yamlConfig.ShutdownTimeout)*time.Second)
@@ -471,25 +553,55 @@ func main() {
 		LogInfo("Server stopped")
 	}()
 
+	tlsEnabled := yamlConfig.TLSCertFile != "" && yamlConfig.TLSKeyFile != ""
 	LogInfoWithData("Load balancer server starting", map[string]interface{}{
-		"address":          addr,
+		"address":          listener.Addr().String(),
 		"database":         yamlConfig.Database,
 		"stale_timeout":    fmt.Sprintf("%dm", yamlConfig.StaleMinutes),
 		"cleanup_interval": fmt.Sprintf("%ds", yamlConfig.CleanupIntervalSecs),
-		"tls_enabled":      yamlConfig.TLSCertFile != "" && yamlConfig.TLSKeyFile != "",
+		"tls_enabled":      tlsEnabled,
 	})
 
+	if ready != nil {
+		ready(listener.Addr())
+	}
+
 	// Start server with TLS if configured
-	if yamlConfig.TLSCertFile != "" && yamlConfig.TLSKeyFile != "" {
+	if tlsEnabled {
 		LogInfo(fmt.Sprintf("Starting HTTPS server with TLS cert: %s", yamlConfig.TLSCertFile))
-		if err := httpServer.ListenAndServeTLS(yamlConfig.TLSCertFile, yamlConfig.TLSKeyFile); err != nil && err != http.ErrServerClosed {
-			LogFatal(fmt.Sprintf("Server error: %v", err))
-		}
+		err = httpServer.ServeTLS(listener, yamlConfig.TLSCertFile, yamlConfig.TLSKeyFile)
 	} else {
 		LogWarn("Starting HTTP server (TLS not configured)")
-		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			LogFatal(fmt.Sprintf("Server error: %v", err))
-		}
+		err = httpServer.Serve(listener)
+	}
+
+	if err != nil && err != http.ErrServerClosed {
+		return fmt.Errorf("server error: %w", err)
+	}
+
+	// Wait for the shutdown goroutine to finish so cleanup is complete on return.
+	cancel()
+	<-shutdownDone
+	return nil
+}
+
+func main() {
+	flags, err := parseServerFlags(os.Args[1:])
+	if err != nil {
+		log.Fatalf("Failed to parse flags: %v", err)
+	}
+
+	yamlConfig, err := loadServerRuntimeConfig(flags)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	// Initialize logger
+	InitLogger(yamlConfig.LogLevel, yamlConfig.JSONLogging, "lb-server")
+	LogInfo("Load balancer server initializing...")
+
+	if err := runServer(context.Background(), yamlConfig, nil); err != nil {
+		LogFatal(err.Error())
 	}
 }
 
@@ -552,8 +664,13 @@ func initDatabase(dbPath string) (*sql.DB, error) {
 	CREATE INDEX IF NOT EXISTS idx_sticky_id ON sticky_assignments(sticky_id);
 	`
 
-	_, err = db.Exec(schema)
-	return db, err
+	if _, err = db.Exec(schema); err != nil {
+		if closeErr := db.Close(); closeErr != nil {
+			log.Printf("Warning: Failed to close database after schema error: %v", closeErr)
+		}
+		return nil, err
+	}
+	return db, nil
 }
 
 func (s *Server) loadClients() error {

@@ -63,6 +63,27 @@ The test suite is organized into several categories:
 - Purge pending allocations endpoint
 - Stale client cleanup
 
+### Startup & Lifecycle Tests (`server/startup_test.go`)
+- Flag parsing and precedence (CLI flags > YAML > defaults)
+- Tier spec indexing and sticky-session enablement
+- Server construction from config, including reload of persisted clients and sticky assignments
+- Route table and middleware chain assembly (`buildHandler`), CORS, rate limiting, security headers, proxy registration
+- `runServer` end-to-end: bind, serve, graceful shutdown, TLS, listen/database/certificate failures
+
+### Resilience Tests (`server/resilience_test.go`)
+- Routing rejections: wrong method, malformed body, unknown tier, no capacity (503)
+- Sticky routing by client IP with GeoIP fallback
+- Handlers, cleanup and sticky bookkeeping continue to work when the database is unavailable
+- Sticky reassignment for unhealthy and overloaded backends
+- Pending allocation expiry and per sticky_id+tier removal
+- GPU and disk capacity checks
+
+### Internals Tests (`server/internals_test.go`)
+- Wildcard matcher edge cases (empty path/pattern, `?` matching)
+- `performHealthChecks` fan-out and `runHealthChecks` shutdown
+- Rate limiter bucket cleanup and `Stop`
+- `timeoutWriter` / `responseWriter` Flush and Hijack behavior
+
 ### Middleware Tests (`server/middleware_test.go`, `server/rate_limit_disabled_test.go`, `server/rate_limit_refill_test.go`)
 - Panic recovery (including `http.ErrAbortHandler`)
 - Request size limiting
@@ -74,6 +95,9 @@ The test suite is organized into several categories:
 - Middleware chaining
 
 ### Client Tests (`client/`)
+- **Startup & lifecycle** (`startup_test.go`): flag parsing, config resolution, HTTP client construction, collector wiring, `runClient`/`runCollector` register-report-shutdown loop, TLS verification
+- **Reporting edge cases** (`reporting_edge_test.go`): request-construction failures, unreachable server, non-200 responses, API key header, GPU stats in reports, GeoIP database download
+- **NVML fakes** (`gpu_nvml_fake_test.go`): full GPU collector coverage on machines without NVIDIA hardware
 - **Metrics collection** (`metrics_test.go`, `metrics_collection_test.go`, `collector_additional_test.go`): CPU/memory/disk sampling and windowed averaging
 - **GPU collection** (`gpu_test.go`, `gpu_comprehensive_test.go`, `gpu_collector_edge_test.go`): NVML metrics and graceful disable when no GPU present
 - **Geolocation** (`geolocation_test.go`, `geolocation_comprehensive_test.go`, `geolocation_additional_test.go`): MaxMind GeoIP lookups and auto-download
@@ -83,9 +107,26 @@ The test suite is organized into several categories:
 ### Common Tests (`common/`)
 - **`types_test.go`**: Data structure serialization/deserialization
 - **`config_test.go`, `config_edge_cases_test.go`, `config_save_test.go`**: Configuration loading, defaults, save/round-trip, and edge cases
+- **`config_io_error_test.go`**: Unreadable/unwritable config paths and save/load round-trips
 
 ### Shared Test Utilities (`server/testutil_test.go`)
 - `TestDB`, `NewTestServer`, `NewMockClient`, `AssertClientSelected` / `AssertNoClient`
+
+### Testability Hooks in Production Code
+
+A few indirection points exist purely so tests can reach code that would otherwise
+require real hardware or terminate the test binary. Production code never reassigns them.
+
+- `client/gpu_collector.go`: `nvmlInit`, `nvmlShutdown`, `nvmlDeviceGetCount`,
+  `nvmlDeviceGetHandleByIndex` wrap the NVML entry points. `client/gpu_nvml_fake_test.go`
+  provides an `nvmlStub` plus a `fakeDevice` that embeds `nvml.Device`, so the whole GPU
+  collector is exercised without an NVIDIA GPU.
+- `client/logger.go`, `server/logger.go`: `osExit` wraps `os.Exit` so the fatal logging
+  paths can be asserted instead of killing the test run.
+- `client/main.go`: `geoIPDownloadURL` lets the GeoIP download tests point at a local
+  `httptest` server instead of S3.
+- `server/main.go`: `runServer(ctx, config, ready)` accepts a `ready` callback that reports
+  the bound listener address, so tests can run the real server on an OS-assigned port.
 
 ## Running Tests
 
@@ -284,12 +325,17 @@ If SQLite errors occur:
 
 ## Coverage Goals
 
-Target coverage by package:
-- `server/`: 80%+ (core routing logic)
+Target coverage by package (all currently met):
+- `server/`: 90%+ (core routing logic)
 - `common/`: 90%+ (simple types and config)
-- `client/`: 70%+ (external dependencies make 100% difficult)
+- `client/`: 90%+ (NVML and system metrics are faked, see the testability hooks above)
 
 Check current coverage:
 ```bash
 go test ./... -cover | grep -E 'coverage|ok'
 ```
+
+The statements that remain uncovered are the ones that cannot be reached from a test
+without a real dependency: GeoIP lookups that need a MaxMind `.mmdb` database,
+`runtime.Caller` failures, `yaml.Marshal` failures on static structs, and `main()`
+itself (which is a thin wrapper over `parseFlags` → `loadRuntimeConfig` → `run`).

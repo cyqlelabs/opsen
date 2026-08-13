@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -203,10 +204,15 @@ func TestCollectMetrics_Timeout(t *testing.T) {
 
 	// Run collectMetrics in background
 	// We don't wait for it or check its state to avoid race conditions
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	started := make(chan bool)
+	stopped := make(chan struct{})
 	go func() {
+		defer close(stopped)
 		started <- true
-		collector.collectMetrics()
+		collector.collectMetrics(ctx)
 	}()
 
 	// Wait for goroutine to start
@@ -215,8 +221,15 @@ func TestCollectMetrics_Timeout(t *testing.T) {
 	// Give it a moment to run
 	time.Sleep(100 * time.Millisecond)
 
-	// Test passes if collectMetrics starts without blocking
-	t.Log("collectMetrics started successfully in background")
+	// Cancelling the context must stop the collection loop
+	cancel()
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("collectMetrics did not stop after context cancellation")
+	}
+
+	t.Log("collectMetrics started and stopped cleanly")
 }
 
 // TestReportStats_WithGPUData verifies stats reporting with GPU metrics

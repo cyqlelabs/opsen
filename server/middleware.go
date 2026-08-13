@@ -174,6 +174,7 @@ type RateLimiter struct {
 	rate     int           // Requests per minute
 	burst    int           // Burst capacity
 	cleanupInterval time.Duration
+	stopCh   chan struct{} // Closed to stop the cleanup goroutine
 }
 
 type TokenBucket struct {
@@ -190,6 +191,7 @@ func NewRateLimiter(requestsPerMinute, burst int) *RateLimiter {
 		rate:            requestsPerMinute,
 		burst:           burst,
 		cleanupInterval: 10 * time.Minute,
+		stopCh:          make(chan struct{}),
 	}
 
 	// Start cleanup goroutine to remove old buckets
@@ -198,22 +200,32 @@ func NewRateLimiter(requestsPerMinute, burst int) *RateLimiter {
 	return rl
 }
 
+// Stop terminates the background cleanup goroutine. It is safe to call once.
+func (rl *RateLimiter) Stop() {
+	close(rl.stopCh)
+}
+
 func (rl *RateLimiter) cleanup() {
 	ticker := time.NewTicker(rl.cleanupInterval)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		rl.mu.Lock()
-		now := time.Now()
-		for ip, bucket := range rl.buckets {
-			bucket.mu.Lock()
-			// Remove buckets inactive for > 30 minutes
-			if now.Sub(bucket.lastCheck) > 30*time.Minute {
-				delete(rl.buckets, ip)
+	for {
+		select {
+		case <-rl.stopCh:
+			return
+		case <-ticker.C:
+			rl.mu.Lock()
+			now := time.Now()
+			for ip, bucket := range rl.buckets {
+				bucket.mu.Lock()
+				// Remove buckets inactive for > 30 minutes
+				if now.Sub(bucket.lastCheck) > 30*time.Minute {
+					delete(rl.buckets, ip)
+				}
+				bucket.mu.Unlock()
 			}
-			bucket.mu.Unlock()
+			rl.mu.Unlock()
 		}
-		rl.mu.Unlock()
 	}
 }
 

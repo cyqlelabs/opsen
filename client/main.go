@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"flag"
@@ -11,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -39,7 +41,8 @@ type Config struct {
 type MetricsCollector struct {
 	config          Config
 	httpClient      *http.Client
-	cpuSamples      [][]float64 // [sample_index][core_index]
+	mu              sync.RWMutex // guards the sample buffers and sampleIndex
+	cpuSamples      [][]float64  // [sample_index][core_index]
 	memorySamples   []float64
 	diskSamples     []float64
 	gpuCollector    *GPUCollector // GPU metrics collector
@@ -49,37 +52,71 @@ type MetricsCollector struct {
 	retryConfig     RetryConfig
 }
 
-func main() {
-	configFile := flag.String("config", "", "Path to YAML configuration file")
-	serverURL := flag.String("server", "", "Load balancer server URL")
-	windowMinutes := flag.Int("window", 0, "Time window for averaging metrics (minutes)")
-	reportInterval := flag.Int("interval", 0, "Report interval in seconds")
-	diskPath := flag.String("disk", "", "Disk path to monitor")
-	clientID := flag.String("id", "", "Client ID (auto-generated if empty)")
-	flag.Parse()
+// clientFlags holds the command-line overrides for the client configuration.
+type clientFlags struct {
+	configFile     string
+	serverURL      string
+	windowMinutes  int
+	reportInterval int
+	diskPath       string
+	clientID       string
+}
 
-	// Load configuration from YAML file
-	yamlConfig, err := common.LoadClientConfig(*configFile)
+// parseClientFlags parses command-line arguments into clientFlags.
+func parseClientFlags(args []string) (*clientFlags, error) {
+	fs := flag.NewFlagSet("opsen-client", flag.ContinueOnError)
+
+	flags := &clientFlags{}
+	fs.StringVar(&flags.configFile, "config", "", "Path to YAML configuration file")
+	fs.StringVar(&flags.serverURL, "server", "", "Load balancer server URL")
+	fs.IntVar(&flags.windowMinutes, "window", 0, "Time window for averaging metrics (minutes)")
+	fs.IntVar(&flags.reportInterval, "interval", 0, "Report interval in seconds")
+	fs.StringVar(&flags.diskPath, "disk", "", "Disk path to monitor")
+	fs.StringVar(&flags.clientID, "id", "", "Client ID (auto-generated if empty)")
+
+	if err := fs.Parse(args); err != nil {
+		return nil, err
+	}
+	return flags, nil
+}
+
+// applyClientFlagOverrides applies non-empty command-line overrides on top of the
+// YAML configuration.
+func applyClientFlagOverrides(yamlConfig *common.ClientConfig, flags *clientFlags) {
+	if flags == nil {
+		return
+	}
+	if flags.serverURL != "" {
+		yamlConfig.ServerURL = flags.serverURL
+	}
+	if flags.windowMinutes > 0 {
+		yamlConfig.WindowMinutes = flags.windowMinutes
+	}
+	if flags.reportInterval > 0 {
+		yamlConfig.ReportInterval = flags.reportInterval
+	}
+	if flags.diskPath != "" {
+		yamlConfig.DiskPath = flags.diskPath
+	}
+	if flags.clientID != "" {
+		yamlConfig.ClientID = flags.clientID
+	}
+}
+
+// loadClientRuntimeConfig resolves the effective client configuration from the
+// YAML file, the command-line overrides and the local environment.
+func loadClientRuntimeConfig(flags *clientFlags) (Config, error) {
+	configFile := ""
+	if flags != nil {
+		configFile = flags.configFile
+	}
+
+	yamlConfig, err := common.LoadClientConfig(configFile)
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		return Config{}, fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Override with command-line flags if provided
-	if *serverURL != "" {
-		yamlConfig.ServerURL = *serverURL
-	}
-	if *windowMinutes > 0 {
-		yamlConfig.WindowMinutes = *windowMinutes
-	}
-	if *reportInterval > 0 {
-		yamlConfig.ReportInterval = *reportInterval
-	}
-	if *diskPath != "" {
-		yamlConfig.DiskPath = *diskPath
-	}
-	if *clientID != "" {
-		yamlConfig.ClientID = *clientID
-	}
+	applyClientFlagOverrides(yamlConfig, flags)
 
 	// Auto-generate client ID if not set
 	if yamlConfig.ClientID == "" {
@@ -91,11 +128,11 @@ func main() {
 	if hostname == "" {
 		hostname, err = os.Hostname()
 		if err != nil {
-			log.Fatalf("Failed to get hostname: %v", err)
+			return Config{}, fmt.Errorf("failed to get hostname: %w", err)
 		}
 	}
 
-	config := Config{
+	return Config{
 		ServerURL:       yamlConfig.ServerURL,
 		ClientID:        yamlConfig.ClientID,
 		Hostname:        hostname,
@@ -108,9 +145,11 @@ func main() {
 		SkipGeolocation: yamlConfig.SkipGeolocation,
 		InsecureTLS:     yamlConfig.InsecureTLS,
 		ServerKey:       yamlConfig.ServerKey,
-	}
+	}, nil
+}
 
-	// Create HTTP client with TLS configuration
+// newHTTPClient builds the HTTP client used for registration and stats reporting.
+func newHTTPClient(config Config) *http.Client {
 	httpClient := &http.Client{
 		Timeout: 30 * time.Second,
 	}
@@ -122,56 +161,60 @@ func main() {
 			},
 		}
 	}
+	return httpClient
+}
 
-	// Initialize logger
-	InitLogger("info", false, "lb-client")
-	LogInfo("Load balancer client initializing...")
-
+// newMetricsCollector wires up a collector with its sample buffers, circuit
+// breaker and GPU collector. The caller owns the returned collector and must
+// call Close on its GPU collector when done.
+func newMetricsCollector(config Config, httpClient *http.Client) *MetricsCollector {
 	// Calculate samples per window (1 sample per second)
 	samplesPerWindow := config.WindowMinutes * 60
 
-	// Create circuit breaker (max 5 failures, 30 second reset timeout)
-	circuitBreaker := NewCircuitBreaker(5, 30*time.Second)
-
-	// Initialize GPU collector (gracefully disabled if no GPUs present)
-	gpuCollector := NewGPUCollector(samplesPerWindow)
-	defer gpuCollector.Close()
-
-	collector := &MetricsCollector{
-		config:         config,
-		httpClient:     httpClient,
-		cpuSamples:     make([][]float64, samplesPerWindow),
-		memorySamples:  make([]float64, samplesPerWindow),
-		diskSamples:    make([]float64, samplesPerWindow),
-		gpuCollector:   gpuCollector,
-		maxSamples:     samplesPerWindow,
-		circuitBreaker: circuitBreaker,
+	return &MetricsCollector{
+		config:        config,
+		httpClient:    httpClient,
+		cpuSamples:    make([][]float64, samplesPerWindow),
+		memorySamples: make([]float64, samplesPerWindow),
+		diskSamples:   make([]float64, samplesPerWindow),
+		// Initialize GPU collector (gracefully disabled if no GPUs present)
+		gpuCollector: NewGPUCollector(samplesPerWindow),
+		maxSamples:   samplesPerWindow,
+		// Circuit breaker: max 5 failures, 30 second reset timeout
+		circuitBreaker: NewCircuitBreaker(5, 30*time.Second),
 		retryConfig:    DefaultRetryConfig(),
 	}
+}
+
+// runClient registers with the load balancer and runs the collection and
+// reporting loops until ctx is cancelled.
+func runClient(ctx context.Context, config Config) error {
+	LogInfo("Load balancer client initializing...")
+
+	collector := newMetricsCollector(config, newHTTPClient(config))
+	defer collector.gpuCollector.Close()
+
+	return runCollector(ctx, collector)
+}
+
+// runCollector registers the collector with the load balancer, then samples and
+// reports metrics until ctx is cancelled.
+func runCollector(ctx context.Context, collector *MetricsCollector) error {
+	config := collector.config
 
 	// Register with server (with retry logic)
-	err = RetryWithBackoff(collector.retryConfig, func() error {
+	if err := RetryWithBackoff(collector.retryConfig, func() error {
 		return collector.register()
-	})
-	if err != nil {
-		LogFatal(fmt.Sprintf("Failed to register with server after retries: %v", err))
+	}); err != nil {
+		return fmt.Errorf("failed to register with server after retries: %w", err)
 	}
 
 	LogInfoWithData("Client registered successfully", map[string]interface{}{
-		"client_id": config.ClientID,
-		"hostname":  config.Hostname,
-		"window_minutes": config.WindowMinutes,
+		"client_id":       config.ClientID,
+		"hostname":        config.Hostname,
+		"window_minutes":  config.WindowMinutes,
 		"report_interval": config.ReportInterval,
 	})
-
-	// Add panic recovery wrapper
-	defer func() {
-		if r := recover(); r != nil {
-			LogFatalWithData("Client panic", map[string]interface{}{
-				"panic": fmt.Sprintf("%v", r),
-			})
-		}
-	}()
 
 	// Start metrics collection goroutine (1 sample/sec) with panic recovery
 	go func() {
@@ -182,7 +225,7 @@ func main() {
 				})
 			}
 		}()
-		collector.collectMetrics()
+		collector.collectMetrics(ctx)
 	}()
 
 	// Report to server periodically
@@ -191,23 +234,64 @@ func main() {
 
 	LogInfo(fmt.Sprintf("Starting stats reporting loop (every %d seconds)", config.ReportInterval))
 
-	for range ticker.C {
-		// Use circuit breaker for stats reporting
-		err := collector.circuitBreaker.Call(func() error {
-			return collector.reportStats()
-		})
-
-		if err != nil {
-			if err == ErrCircuitOpen {
-				LogWarn("Circuit breaker is open, skipping stats report")
-			} else {
-				LogErrorWithData("Failed to report stats", map[string]interface{}{
-					"error": err.Error(),
-					"circuit_state": collector.circuitBreaker.GetState().String(),
-					"failures": collector.circuitBreaker.GetFailures(),
-				})
-			}
+	for {
+		select {
+		case <-ctx.Done():
+			LogInfo("Stats reporting loop stopping...")
+			return nil
+		case <-ticker.C:
+			collector.reportStatsWithCircuitBreaker()
 		}
+	}
+}
+
+// reportStatsWithCircuitBreaker reports stats once, logging (but not returning)
+// any failure so that the reporting loop keeps running.
+func (c *MetricsCollector) reportStatsWithCircuitBreaker() {
+	err := c.circuitBreaker.Call(func() error {
+		return c.reportStats()
+	})
+	if err == nil {
+		return
+	}
+
+	if err == ErrCircuitOpen {
+		LogWarn("Circuit breaker is open, skipping stats report")
+		return
+	}
+
+	LogErrorWithData("Failed to report stats", map[string]interface{}{
+		"error":         err.Error(),
+		"circuit_state": c.circuitBreaker.GetState().String(),
+		"failures":      c.circuitBreaker.GetFailures(),
+	})
+}
+
+func main() {
+	flags, err := parseClientFlags(os.Args[1:])
+	if err != nil {
+		log.Fatalf("Failed to parse flags: %v", err)
+	}
+
+	config, err := loadClientRuntimeConfig(flags)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
+
+	// Initialize logger
+	InitLogger("info", false, "lb-client")
+
+	// Add panic recovery wrapper
+	defer func() {
+		if r := recover(); r != nil {
+			LogFatalWithData("Client panic", map[string]interface{}{
+				"panic": fmt.Sprintf("%v", r),
+			})
+		}
+	}()
+
+	if err := runClient(context.Background(), config); err != nil {
+		LogFatal(err.Error())
 	}
 }
 
@@ -331,45 +415,62 @@ func (c *MetricsCollector) register() error {
 	return nil
 }
 
-func (c *MetricsCollector) collectMetrics() {
+// collectMetrics samples system metrics once per second until ctx is cancelled.
+func (c *MetricsCollector) collectMetrics(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 
-	for range ticker.C {
-		// CPU per-core usage
-		perCore, err := cpu.Percent(0, true)
-		if err == nil && len(perCore) > 0 {
-			c.cpuSamples[c.sampleIndex] = perCore
+	for {
+		select {
+		case <-ctx.Done():
+			LogInfo("Metrics collection stopping...")
+			return
+		case <-ticker.C:
+			c.collectSample()
 		}
+	}
+}
 
-		// Memory usage
-		memInfo, err := mem.VirtualMemory()
-		if err == nil {
-			c.memorySamples[c.sampleIndex] = float64(memInfo.Used) / 1024 / 1024 / 1024
+// collectSample takes a single sample of CPU, memory, disk and GPU usage and
+// stores it in the rolling window.
+func (c *MetricsCollector) collectSample() {
+	// CPU per-core usage
+	perCore, cpuErr := cpu.Percent(0, true)
+
+	// Memory usage
+	memInfo, memErr := mem.VirtualMemory()
+
+	// Disk usage
+	diskInfo, diskErr := disk.Usage(c.config.DiskPath)
+
+	c.mu.Lock()
+	if cpuErr == nil && len(perCore) > 0 {
+		c.cpuSamples[c.sampleIndex] = perCore
+	}
+	if memErr == nil {
+		c.memorySamples[c.sampleIndex] = float64(memInfo.Used) / 1024 / 1024 / 1024
+	}
+	if diskErr == nil {
+		c.diskSamples[c.sampleIndex] = float64(diskInfo.Used) / 1024 / 1024 / 1024
+	}
+	c.sampleIndex = (c.sampleIndex + 1) % c.maxSamples
+	c.mu.Unlock()
+
+	// GPU metrics (if available)
+	if c.gpuCollector.IsEnabled() {
+		if err := c.gpuCollector.CollectSample(); err != nil {
+			LogWarn(fmt.Sprintf("Failed to collect GPU sample: %v", err))
 		}
-
-		// Disk usage
-		diskInfo, err := disk.Usage(c.config.DiskPath)
-		if err == nil {
-			c.diskSamples[c.sampleIndex] = float64(diskInfo.Used) / 1024 / 1024 / 1024
-		}
-
-		// GPU metrics (if available)
-		if c.gpuCollector.IsEnabled() {
-			if err := c.gpuCollector.CollectSample(); err != nil {
-				LogWarn(fmt.Sprintf("Failed to collect GPU sample: %v", err))
-			}
-		}
-
-		c.sampleIndex = (c.sampleIndex + 1) % c.maxSamples
 	}
 }
 
 func (c *MetricsCollector) reportStats() error {
-	// Calculate averages over the window
-	cpuCoreAvg := c.calculateCPUAverages()
+	// Calculate averages over the window (single read lock for a consistent view)
+	c.mu.RLock()
+	cpuCoreAvg := c.calculateCPUAveragesLocked()
 	memoryUsed := c.calculateAverage(c.memorySamples)
 	diskUsed := c.calculateAverage(c.diskSamples)
+	c.mu.RUnlock()
 
 	// Get current total resources
 	memInfo, _ := mem.VirtualMemory()
@@ -438,6 +539,14 @@ func (c *MetricsCollector) reportStats() error {
 }
 
 func (c *MetricsCollector) calculateCPUAverages() []float64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.calculateCPUAveragesLocked()
+}
+
+// calculateCPUAveragesLocked computes per-core averages. Callers must hold at
+// least a read lock on c.mu.
+func (c *MetricsCollector) calculateCPUAveragesLocked() []float64 {
 	if len(c.cpuSamples) == 0 {
 		return []float64{}
 	}
@@ -569,8 +678,12 @@ func (c *MetricsCollector) getGeolocationFromIP(dbPath, ipAddress string) (map[s
 	}, nil
 }
 
+// geoIPDownloadURL is the source for the GeoLite2 city database. It is a
+// variable so tests can point the download at a local server.
+var geoIPDownloadURL = "https://cyqle-opsen.s3.us-east-2.amazonaws.com/GeoLite2-City.mmdb"
+
 func (c *MetricsCollector) downloadGeoIPDatabase(targetPath string) error {
-	downloadURL := "https://cyqle-opsen.s3.us-east-2.amazonaws.com/GeoLite2-City.mmdb"
+	downloadURL := geoIPDownloadURL
 
 	log.Printf("Downloading GeoIP database from %s", downloadURL)
 
